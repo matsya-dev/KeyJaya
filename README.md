@@ -29,6 +29,15 @@ with **SHA256SUMS.txt**. Keep Windows security protection enabled.
 
 ## Everyday examples
 
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/keyjaya-demo-still.png">
+  <img src="docs/images/keyjaya-demo.gif" alt="Typing Hare Krishna and converting it to Hare Kṛṣṇa, cycling Rama spellings, expanding SP to Śrīla Prabhupāda, and changing ki to kī" width="583" height="220">
+</picture>
+
+*Typing illustration using KeyJaya's conversion output. **Left Ctrl** converts
+words, cycles spellings, and expands SP; **backtick** changes the preceding letter.
+[View the still image](docs/images/keyjaya-demo-still.png).*
+
 | What you do | Unicode result |
 | --- | --- |
 | Type `a`, then press backtick | `ā`; another press returns to `a` |

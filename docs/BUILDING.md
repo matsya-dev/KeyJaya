@@ -88,3 +88,10 @@ noninteractive probe. It loads conversion code without starting the resident.
 app's actual tray controls and factory settings. It does not display the menu,
 capture the desktop, or read installed user configuration. Review the image
 before committing it, then run `python tools/check_docs.py` to check local links.
+
+`./tools/render_readme_demo.ps1 -Python 'C:\Python311\python.exe'` regenerates the
+README typing animation and still image. This optional documentation tool needs
+Pillow and the Windows Cambria font. It verifies the displayed spellings and cycle
+order against the compiled conversion engine, then draws an illustrated typing
+sequence; it does not record or control a live editor. Its pace is illustrative,
+not a performance benchmark. Pillow is not required to build or use KeyJaya.
