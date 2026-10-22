@@ -1,84 +1,355 @@
-# KeyJaya
+# KeyJaya user guide
 
-KeyJaya helps you write Sanskrit and Bengali, add diacritics, and convert text between writing systems. It runs in the Windows system tray.
+KeyJaya adds diacritics, expands abbreviations, and converts scripts in editable
+text. This guide covers the default keys and the settings available from its
+Windows tray icon. If you customize a shortcut, use your chosen key instead.
 
-## Main features
+- [Installation](#installation)
+- [Letters, words, and selections](#letters-words-and-selections)
+- [All eight default shortcuts](#all-eight-default-shortcuts)
+- [Fonts and encoding](#fonts-and-encoding)
+- [Script conversion](#script-conversion)
+- [Abbreviations and scripture](#abbreviations-and-scripture)
+- [Automatic corrections and italics](#automatic-corrections-and-italics)
+- [Tray settings and shortcut customization](#tray-settings-and-shortcut-customization)
+- [Using KeyJaya in different editors](#using-keyjaya-in-different-editors)
+- [Troubleshooting](#troubleshooting)
 
-- **Add diacritics:** convert a letter, word, or selected passage using your keyboard.
-- **Use your preferred fonts:** work with Unicode or Balarama / legacy fonts.
-- **Convert text:** switch between IAST, Balarama, plain Roman text, ITRANS, Devanagari, and Bengali script.
-- **Expand abbreviations and verses:** insert frequently used names, phrases, and scripture passages.
-- **Manage triggers:** add, edit, disable, or delete abbreviations in a built-in editor.
-- **Correct typing:** automatically fix common spelling mistakes and add apostrophes to contractions.
-- **Apply italics:** format eligible Sanskrit/Bengali terms while keeping English, proper names, and editorial exceptions regular.
-- **Spell out numbers:** turn a targeted number such as `24` into `twenty-four`.
+## Installation
 
-## Get started
+1. Open the [latest release](https://github.com/matsya-dev/KeyJaya/releases/latest)
+   and download the **KeyJaya Setup** `.exe` under **Assets**.
+2. Run setup. You can choose whether to create a desktop shortcut.
+3. Find the white **की** icon in the Windows system tray, possibly under the
+   hidden-icons arrow. Open **Cheat sheet** from its menu, or choose **Open Cheat
+   sheet** when setup finishes.
 
-1. Run the **KeyJaya Setup** installer. You can choose whether to create a desktop shortcut.
-2. Find the white **की** icon in the Windows system tray. It may be under the hidden-icons arrow.
-3. Click **Open Cheat sheet** when setup finishes, or right-click the tray icon and choose **Cheat sheet**.
+KeyJaya requires **Windows x64 and .NET Framework 4.8**. The installer includes
+its dictionaries. You do not need Python, Git, or developer tools to use it.
+Balarama fonts are supplied separately.
 
-KeyJaya starts after installation and when you sign in to Windows. You can turn off **Start with Windows** in the tray menu.
+The current installer is unsigned, so Windows may display an unrecognized-app
+warning. Download from the repository's Releases page and compare the file's
+SHA-256 with the release's **SHA256SUMS.txt**. Keep Windows security protection
+enabled.
 
-To open it later, search for **KeyJaya** in the Start menu or Flow Launcher with Start Menu indexing enabled. Updates preserve your settings, custom triggers, and desktop-shortcut choice.
+KeyJaya starts after installation and when you sign in to Windows. Turn off
+**Start with Windows** in the tray menu if you prefer to launch it yourself.
+To open it later, search for **KeyJaya** in the Start menu, use its desktop
+shortcut, or use Flow Launcher with Start Menu indexing enabled. Updates preserve
+your settings, custom triggers, and desktop-shortcut choice.
 
-## Try it
+For a short guided trial, follow the [five-minute check](FIRST_RUN_CHECK.md) in a
+new scratch document.
 
-These examples show Unicode output. With **Encoding: Auto (detect font)**, a Balarama font produces the corresponding legacy characters.
+## Letters, words, and selections
 
-| What to do | Result |
+### Change one letter
+
+Type a letter and press **backtick** (the `` ` `` key). It changes only the letter
+immediately before the caret. Repeated presses cycle its options:
+
+- `a` → `ā` → `a`
+- `s` → `ṣ` → `ś` → `s`
+
+You can move the caret back to an existing letter before pressing backtick. For
+example, in `ki jaya!`, put the caret immediately after the `i` to make `kī jaya!`.
+In a Balarama font, Auto encoding produces the corresponding legacy characters.
+After an unsupported character, such as a space, backtick types normally.
+
+### Convert a word
+
+Type `Krishna` and **tap Left Ctrl by itself** to get `Kṛṣṇa`. Ordinary shortcuts
+such as Ctrl+C and Ctrl+V continue to work.
+
+The caret can be inside an existing word, directly after it, or after attached
+punctuation. A trailing space separates it from that word. Repeated taps cycle
+available spellings and the original plain spelling continuously. For example:
+
+`Rama` → `Rāma` → `Ramā` → `Rāmā` → `Rama` → `Rāma`
+
+Configured short abbreviations take priority over ordinary word conversion.
+Recognized plurals are supported too, such as `acaryas` → `ācāryas`.
+
+### Compounds and separators
+
+At the end of `Vyasa-puja`, Left Ctrl converts the whole compound to `Vyāsa-pūjā`.
+Inside the compound, it targets the current component. Immediately before a dash
+it targets the left component; immediately after it, the right component.
+After punctuation following a compound, it targets the final component.
+Hyphens, nonbreaking hyphens, and en dashes are preserved.
+
+A forward slash separates targets: `God/Krsna` with the caret at the end becomes
+`God/Kṛṣṇa`. Unknown or English components stay unchanged during ordinary
+word conversion.
+
+### Convert a selection
+
+Select one or more words and tap Left Ctrl. KeyJaya converts recognized
+Sanskrit/Bengali words while leaving ordinary English and passage numbers
+unchanged. With automatic italics enabled, it also styles eligible words that
+already have diacritics.
+
+For example, `Earlier untouched raja and Krsna.` becomes
+`Earlier untouched rāja and Kṛṣṇa.` Only the eligible Sanskrit term gains italics;
+English and the proper name keep regular type. Convert a passage once, then target
+individual words to cycle their spellings.
+
+Converted selections remain selected. If you immediately continue typing while a
+conversion is finishing, queued typing follows the converted passage at its end.
+
+### Spell out a number
+
+Place the caret inside or immediately after a single number, or select only that
+number, and tap Left Ctrl:
+
+- `24` → `twenty-four`
+- `24th` → `twenty-fourth`
+
+Numbers inside a longer selected passage remain numbers. There is no `#` trigger.
+
+### Undo
+
+Press **Backspace immediately after a manual letter or word conversion** to
+restore the original text. After several cycles, it restores the text from before
+cycling, including its formatting. A component conversion restores that component.
+
+Use **Ctrl+Z** to undo a selected-text conversion. Automatic spelling and
+contraction corrections retain normal Backspace behavior.
+
+## All eight default shortcuts
+
+| Action | Default key | Example output |
+| --- | --- | --- |
+| Single letter | Backtick | `a` → `ā` |
+| Word, selection, abbreviation, or single number | Left Ctrl tap | `Krishna` → `Kṛṣṇa` |
+| Unicode / IAST | `Ctrl+.` | `kṛṣṇa` |
+| Balarama / legacy | `Ctrl+,` | `kåñëa` |
+| Plain Roman text | `Ctrl+/` | `krsna` |
+| ITRANS or Hindi Devanagari | `Ctrl+\` | `kRShNa` or `कृष्ण` |
+| Sanskrit Devanagari | `Ctrl+[` | `कृष्ण` |
+| Bengali script | `Ctrl+]` | `কৃষ্ণ` |
+
+For the six output shortcuts, **select text first**; copying is optional. With no
+selection, KeyJaya uses your copied text. `Ctrl+/` removes diacritics to produce
+plain Roman spelling; it is not a general paste-without-formatting command.
+
+These commands preserve the original clipboard when it can be safely backed up
+and restored. A conversion may be skipped if that cannot be verified. See
+[Privacy and local data](PRIVACY.md) for the clipboard behavior in detail.
+
+Conversion shortcuts take priority over matching app commands while KeyJaya is
+active. For example, Ctrl+[ and Ctrl+] produce scripts instead of Word's font-size
+commands. Change the bindings through **Customize shortcuts**, or pause KeyJaya
+to restore the app's normal key behavior.
+
+## Fonts and encoding
+
+The tray offers three choices for letter/word conversion and automatic short
+abbreviations:
+
+- **Encoding: Auto (detect font)** follows the target font where the editor
+  exposes it. Use this for a mixture of Unicode and Balarama documents.
+- **Encoding: Unicode / IAST** forces Unicode output.
+- **Encoding: Balarama / Legacy** forces legacy output.
+
+An explicit choice wins over font detection. The six output shortcuts explicitly
+choose their own output; Ctrl+. produces Unicode and Ctrl+, produces Balarama.
+
+Legacy text needs a matching Balarama font to display correctly. For example,
+`kåñëa` is the stored legacy spelling of `kṛṣṇa`. In a regular Unicode font, those
+legacy characters look different.
+
+In Word, Auto can repair a Balarama word containing Unicode characters that have
+fallen back to another font. It converts the word to legacy encoding and uses the
+surrounding Balarama font. In InDesign Find/Change fields, Auto uses Unicode
+because the field's display font does not identify the document's encoding.
+
+## Script conversion
+
+### Choose the output
+
+- **Ctrl+[** produces Sanskrit Devanagari.
+- **Ctrl+]** produces Bengali script.
+- **Ctrl+\** produces ITRANS by default. Select **Ctrl+\: Hindi** in the tray to
+  produce Hindi Devanagari instead. Only one Ctrl+\ output is selected at a time;
+  the Sanskrit and Bengali shortcuts remain available.
+
+Select `kṛṣṇa` and try each output: `कृष्ण`, `কৃষ্ণ`, or `kRShNa`.
+For everyday Hindi, choose Hindi and convert `aapka phool phul sa hi na` to
+`आपका फूल फूल स हि न`.
+
+Script shortcuts accept valid Roman syllables even when they overlap English:
+`hi` can become `हि` or `হি`, and `na` can become `न` or `ন`. Select only the text
+you intend to transliterate. Ordinary word conversion still protects English.
+
+### Convert back to Roman text
+
+**Ctrl+.** detects Devanagari, Bengali, Balarama, and recognized ITRANS input and
+produces Unicode / IAST. Mixed-script passages are supported.
+
+Devanagari readings use word and sentence context to distinguish Hindi from
+Sanskrit. Ambiguous text defaults to the Sanskrit reading: isolated `राम` becomes
+`rāma`, while clear Hindi context can use `rām`. Sanskrit endings are retained in
+forms such as `श्रीकृष्णाय` → `śrīkṛṣṇāya`.
+
+### Common spellings or precise conversion
+
+With **Precise script conversion** off, KeyJaya uses recognized words, common
+Roman spelling variants, and known phrases to choose script spellings. Plain
+Roman input is ambiguous, so review the result.
+
+Enable **Precise script conversion** to follow the supplied sounds without those
+spelling guesses. For example, ordinary conversion interprets `kala` as `काल`,
+while precise conversion gives `कल`. Precise script-to-Roman conversion also
+keeps the written vowels instead of applying Hindi pronunciation adjustments.
+
+### Numbers and verse markers
+
+Devanagari output uses Devanagari digits (`123` → `१२३`), and Bengali output uses
+Bengali digits (`123` → `১২৩`). Conversion to Roman text uses standard Arabic
+numerals for ordinary numbers.
+
+By default, conversion from Indic scripts to Roman text removes verse bars/danda
+marks and their adjacent verse numbers. Other numbers remain. A colon used as
+visarga after Indic text is recognized: `प्रजा: ॥ ६ ॥` becomes `prajāḥ`.
+Enable **Keep verse markers and numbers** to retain the verse structure.
+
+## Abbreviations and scripture
+
+### Short abbreviations
+
+Type an abbreviation and tap Left Ctrl to expand it in the selected encoding:
+
+| Abbreviation | Unicode expansion |
 | --- | --- |
-| Type `a`, then press **backtick** | `ā` |
-| Type `Krsna`, then tap Left Ctrl by itself | `Kṛṣṇa` |
-| Type `God/Krsna`, then tap Left Ctrl | `God/Kṛṣṇa` |
-| Type `HT`, then tap Left Ctrl | `Haridāsa Ṭhākura` |
-| Type `doesnt` followed by a space | `doesn’t` |
-| Type `24`, then tap Left Ctrl | `twenty-four` |
-| Type `24th`, then tap Left Ctrl | `twenty-fourth` |
-| Type `BG1.1V>` | Inserts the Bhagavad-gītā 1.1 verse |
+| `SP` | `Śrīla Prabhupāda` |
+| `HT` | `Haridāsa Ṭhākura` |
+| `SPG` | `Supreme Personality of Godhead` |
+| `ISKCON` | `International Society for Krishna Consciousness` |
 
-**Backtick changes only the letter immediately before the caret.** Press it repeatedly to cycle through that letter’s options.
+Abbreviations are case-sensitive: `SP` and `sp` are different. Their configured
+replacement capitalization is preserved. Fixed wording can remain unchanged in
+all encodings.
 
-**Left Ctrl converts the word at the caret.** It also works inside an existing word. Repeated taps cycle through available spellings and plain text. At the end of a hyphenated compound it converts the whole compound; inside it, it targets the current part. Normal Ctrl+C and Ctrl+V still work.
+Explicit endings also work while typing:
 
-You can also select a passage and tap Left Ctrl to convert recognized Sanskrit/Bengali words. Ordinary English words and numbers in the passage stay unchanged. To spell out a number, target only that number with the caret or select only the number.
+- `SP>` or `krsna>` gives Unicode.
+- `SP<` or `krsna<` gives Balarama.
+- `SP?` or `krsna?` gives plain Roman spelling.
 
-Press **Backspace immediately after a manual conversion** to restore its original text. After cycling, this restores the text from before the cycle. Use **Ctrl+Z** to undo a selected-text conversion. Automatic spelling and contraction corrections use normal Backspace behavior.
+Open the cheat sheet's **Triggers** tab to search the available entries.
 
-## Convert selected or copied text
+### Add, edit, or delete an abbreviation
 
-Select text and press a shortcut. Copying first is optional. With no selection, KeyJaya uses your copied text.
+1. Choose **Edit triggers…** from the tray or the bottom of the cheat sheet.
+2. Search for an existing abbreviation, or add a new one.
+3. Enter a Unicode replacement or paste Balarama text. The editor generates the
+   Unicode, Balarama, and plain forms, with optional output overrides.
+4. Use **Keep replacement exactly as entered** for fixed wording. Uncheck an
+   entry to disable it temporarily. **Restore built-in** resets only the selected
+   built-in abbreviation.
+5. Click **Save and apply** to activate the changes across apps. **Cancel**
+   discards unsaved edits.
 
-| Default shortcut | Output |
+An abbreviation works with Left Ctrl and its explicit >, <, and ? forms. Deleting
+it removes all forms together. A backup of the previous trigger file is kept
+automatically; updates preserve your custom triggers.
+
+### Insert a verse or translation
+
+Type the reference and its ending. For Bhagavad-gītā 18.66:
+
+| Trigger | Inserts |
 | --- | --- |
-| `Ctrl+.` | Unicode / IAST, such as `kṛṣṇa` |
-| `Ctrl+,` | Balarama / legacy text, such as `kåñëa` |
-| `Ctrl+/` | Plain Roman text, such as `krsna` |
-| `Ctrl+\` | ITRANS, such as `kRShNa`; choose Hindi in the tray for Hindi Devanagari instead |
-| `Ctrl+[` | Sanskrit Devanagari, such as `कृष्ण` |
-| `Ctrl+]` | Bengali script, such as `কৃষ্ণ` |
+| `BG18.66>` | Verse |
+| `BG18.66T>` | Translation |
+| `BG18.66VT>` | Verse and translation |
+| `BG18.66VTR>` | Verse, translation, and reference |
 
-Ctrl+. also recognizes copied Devanagari and Bengali text and converts it to IAST. Your clipboard is preserved after conversion.
+Use `<` for Balarama or `?` for plain Roman output. The final symbol activates the
+insertion; a reference without it does not insert the passage. The cheat sheet
+lists the supported scripture formats. Insertions use the document's formatting;
+automatic italics follow the rules below.
 
-## Other ways to convert
+## Automatic corrections and italics
 
-Add an ending while typing: `krsna>` gives Unicode, `krsna<` gives Balarama, and `krsna?` gives plain Roman text. The cheat sheet lists the available short triggers and scripture formats.
+**Autocorrect spelling** and **Automatic contractions** are separate tray options.
+For example, typing `teh ` corrects it to `the `, and `doesnt ` becomes `doesn’t `.
+Contractions use curly apostrophes and also recognize supported punctuation or
+Enter as a word ending. `lets` / `Lets` become `let’s` / `Let’s`.
 
-## Useful settings
+**Auto-italicize conversions** is enabled by default. It styles eligible
+Sanskrit/Bengali terms throughout a converted selection, including words that
+already have diacritics. Names, places, festivals, English loanwords such as
+`guru` and `yoga`, and editorial exceptions remain regular, following the app's
+BBT/BVT style rules. Name context can distinguish a personal name from an ordinary
+term.
 
-Choose **Edit triggers…** in the tray menu or at the bottom of the cheat sheet. Search for an abbreviation such as SP, K, or ISKCON, then add, edit, or delete it. Unicode and pasted Balarama replacements are supported; other output forms are generated automatically, with optional overrides. Use **Keep replacement exactly as entered** for fixed wording. Uncheck an entry to disable it temporarily, or **Restore built-in** to restore only that entry’s original replacement.
+Complete inserted Sanskrit/Bengali verses are italicized. In translations, only
+eligible terms gain italics; proper names and English remain regular.
+Devanagari, Bengali script, and ITRANS outputs never gain automatic italics.
 
-Click **Save and apply** to activate edits immediately. **Cancel** discards unsaved changes. Deleting an abbreviation removes all its encoding forms together. A backup of the previous trigger file is kept automatically.
+Supported rich-text editors use native formatting. Plain-text fields stay plain.
+Supported Markdown editing uses italic markers and protects code and links.
+Turn the option off to convert without adding automatic italics.
 
-Right-click the tray icon to change these options:
+## Tray settings and shortcut customization
 
-The tray menu follows Windows light, dark, and high-contrast settings and scales to the monitor where you open it. The cheat sheet, trigger editor, and shortcut editor follow the same theme.
+Open the menu from the white **की** icon:
 
-- **Encoding:** keep Auto to follow the font, or choose Unicode / IAST or Balarama / Legacy yourself.
-- **Auto-italicize conversions:** enabled by default; turn it off whenever you prefer. Devanagari, Bengali script, and ITRANS outputs do not gain automatic italics. Plain-text fields remain plain; supported Markdown editing uses italic markers.
-- **Autocorrect spelling / Automatic contractions:** turn either feature on or off.
-- **Customize shortcuts:** change any of the eight conversion actions, or restore their defaults.
-- **Pause KeyJaya:** temporarily return all keys to the app’s normal behavior.
+![KeyJaya tray menu with default settings](images/tray-menu.png)
 
-If a conversion does nothing, check that KeyJaya is running and unpaused, and that the caret is in editable text. For word conversion, place it inside the word or directly after the word or its punctuation, with no trailing space. If the characters look wrong, check the Encoding choice. Open **Cheat sheet** whenever you need a reminder.
+The menu and its windows follow Windows light, dark, and high-contrast settings
+and monitor scaling. The screenshot shows the default light-theme appearance.
+
+- **Cheat sheet** is a quick, searchable reminder of shortcuts and triggers.
+- **Customize shortcuts…** changes all eight actions. Letter and word actions
+  can also use function keys or supported shortcut chords. Save to apply changes,
+  or restore defaults. The same window is available from the cheat sheet.
+- **Start with Windows** controls automatic launch at sign-in.
+- **Pause KeyJaya** temporarily restores ordinary app key behavior; choose
+  **Resume KeyJaya** to reactivate it.
+- **Restart KeyJaya** restarts the app. **Exit** closes it.
+- **Open configuration folder** and **Reload configuration** are available for
+  advanced configuration. Use the built-in trigger and shortcut editors for
+  routine changes.
+
+## Using KeyJaya in different editors
+
+These editing areas have been exercised during development:
+
+| App | Editing areas and notes |
+| --- | --- |
+| Microsoft Word | Body text, footnotes/endnotes, Unicode/Balarama fonts, Track Changes, pasted text and Paste Options |
+| Adobe InDesign | Text frames, footnotes/endnotes, Text/GREP Find/Change fields; GREP codes are preserved |
+| Zen/browser editors, ChatGPT, WhatsApp | Editable plain-text and rich-text fields |
+| Obsidian | Writable Markdown, including Live Preview |
+| Microsoft Excel | Cells in edit mode with a visible text caret; enter edit mode before converting |
+| Adobe Acrobat | Sticky-note comments, replies, and text-box comments |
+
+App versions and controls can behave differently; custom, protected, or elevated
+editors may not support conversion. Physical installation on a separate user's
+computer still awaits validation. Hosted automated tests check logic, builds,
+and isolated installation, rather than these editor interactions.
+
+## Troubleshooting
+
+| What happens | What to check |
+| --- | --- |
+| A conversion does nothing | Check the tray icon, confirm KeyJaya is unpaused, and put the caret in editable text. |
+| The previous word does not convert | Move the caret inside or directly after it or its punctuation; remove any trailing space from the target position. |
+| Characters look wrong | Check the encoding choice and font. Legacy output needs a Balarama font. |
+| A shortcut runs an app command | Check Customize shortcuts for a conflict or a changed binding. Pause restores ordinary app commands. |
+| A short abbreviation does not expand | Check exact capitalization and confirm the entry is enabled in Edit triggers. |
+| Italics are absent | Check Auto-italicize conversions, the term's style exception, and whether the field supports formatting. |
+| Roman input produces an unexpected script spelling | Try precise conversion or a more explicit phonetic spelling; ambiguous input can have multiple readings. |
+
+If the problem persists, [report a bug](https://github.com/matsya-dev/KeyJaya/issues/new?template=bug-report.yml)
+with the KeyJaya/app versions, font, encoding choice, exact scratch input, keys,
+caret/selection position, and whether the text was typed or pasted. Test with
+nonprivate scratch text; do not attach working documents or private content.
+
+Read [Privacy and local data](PRIVACY.md) for keyboard monitoring, clipboard
+handling, preferences, and logs. Report vulnerabilities through the
+[private security process](../SECURITY.md).
