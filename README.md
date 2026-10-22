@@ -6,7 +6,7 @@
 
 # KeyJaya
 
-Kṛṣṇa is in Ctrl. Diacritics are too.
+Kṛṣṇa is in Ctrl, now diacritics are too.
 
 KeyJaya is a tray app that adds diacritics, expands abbreviations, and converts text
 between ASCII, Unicode, Balarama (Legacy), ITRANS, Devanagari, and Bengali script. 
