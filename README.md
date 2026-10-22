@@ -1,7 +1,7 @@
 <p align="center">
   <img src="docs/images/keyjaya-logo.png" alt="KeyJaya की logo" width="96" height="96" align="middle">
   &nbsp;&nbsp;
-  <img src="docs/images/keyjaya-demo.gif" alt="Typing and converting Hare Krishna, cycling Rama spellings, and expanding SP ki jaya" width="583" height="220" align="middle">
+  <img src="docs/images/keyjaya-demo.gif" alt="Typing and converting Hare Krishna, cycling Rama spellings, and expanding SP ki jaya" width="254" height="96" align="middle">
 </p>
 
 # KeyJaya
