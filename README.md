@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="docs/images/keyjaya-logo.png" alt="KeyJaya की logo" width="96" height="96">
+  <img src="docs/images/keyjaya-logo.png" alt="KeyJaya की logo" width="96" height="96" align="middle">
+  &nbsp;&nbsp;
+  <img src="docs/images/keyjaya-demo.gif" alt="Typing and converting Hare Krishna, cycling Rama spellings, and expanding SP ki jaya" width="583" height="220" align="middle">
 </p>
 
 # KeyJaya
@@ -28,15 +30,6 @@ warning. Download from this repository's Releases page and compare its SHA-256
 with **SHA256SUMS.txt**. Keep Windows security protection enabled.
 
 ## Everyday examples
-
-<picture>
-  <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/keyjaya-demo-still.png">
-  <img src="docs/images/keyjaya-demo.gif" alt="Typing Hare Krishna and converting it to Hare Kṛṣṇa, cycling Rama spellings, expanding SP to Śrīla Prabhupāda, and changing ki to kī" width="583" height="220">
-</picture>
-
-*Typing illustration using KeyJaya's conversion output. **Left Ctrl** converts
-words, cycles spellings, and expands SP; **backtick** changes the preceding letter.
-[View the still image](docs/images/keyjaya-demo-still.png).*
 
 | What you do | Unicode result |
 | --- | --- |
