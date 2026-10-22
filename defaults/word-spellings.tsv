@@ -1,0 +1,5 @@
+# Preferred spelling or never-convert word: input<TAB>IAST spelling or !keep
+# Save, then choose Reload configuration. Case-insensitive; one word per row.
+# Uncomment examples and use actual Tab separators:
+# raja	rājā
+# age	!keep

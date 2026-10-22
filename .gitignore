@@ -1,0 +1,44 @@
+# Generated output, including all installers and test fixtures.
+/out/
+**/bin/
+**/obj/
+.vs/
+.vscode/
+__pycache__/
+*.py[cod]
+*.exe
+*.dll
+*.pdb
+*.lnk
+*.log
+*.tmp
+*.bak
+*.before-*
+*.backup-*
+**/logs/
+**/state/
+**/backups/
+
+# Local editor settings, credentials and unreviewed inputs.
+.env
+.env.*
+*.pem
+*.pfx
+*.key
+/local-data/
+/private/
+*.epub
+*.mobi
+*.azw*
+*.kfx
+*.nfo
+*.rtf
+*.doc
+*.docx
+*.asd
+*.pdf
+!data/sanskrit-morphology-LGPLLR.pdf
+*.zip
+
+# Third-party licensed dictionary sources and runtime indexes are intentional.
+# Do not ignore *.dat, *.idx, *.hash or *.gz globally.

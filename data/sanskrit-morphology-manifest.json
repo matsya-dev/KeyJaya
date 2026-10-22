@@ -1,0 +1,38 @@
+{
+  "counts": {
+    "source_rows": 1289204,
+    "technical_forms_excluded": 465,
+    "compound_morphemes_excluded": 44201,
+    "lookup_keys": 999513,
+    "spellings": 1203140
+  },
+  "grammatical_categories": {
+    "acc": 252178,
+    "sg": 537506,
+    "gen": 173727,
+    "loc": 193477,
+    "du": 246510,
+    "nom": 248458,
+    "abl": 192056,
+    "pl": 480568,
+    "ins": 203614,
+    "dat": 192040,
+    "voc": 49405,
+    "ip": 31536,
+    "pr": 32579,
+    "fut": 23365,
+    "op": 31636,
+    "im": 31565,
+    "cnd": 585,
+    "ben": 5871,
+    "prf": 7559,
+    "subj": 17,
+    "ppp": 39520,
+    "inf": 3148,
+    "abs": 2837
+  },
+  "source": "https://sanskrit.uohyd.ac.in/SKT/DATA/XML/SL_morph.xml.gz",
+  "version": "2026-09-30",
+  "license": "LGPLLR",
+  "notes": "SLP1 decoded against known kfzRa/vizRu/jYA forms; citation visarga alternatives added; incomplete compound-only morphemes excluded."
+}

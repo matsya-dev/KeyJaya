@@ -1,0 +1,8 @@
+Sanskrit morphology: © Gérard Huet 1994–2026, Sanskrit Heritage version 3.84 (2026-09-30).
+Source: https://sanskrit.uohyd.ac.in/SKT/xml.html
+License: Lesser General Public License for Linguistic Resources (LGPLLR).
+KeyJaya modifications, 2026-10-21: SLP1 → NFC IAST; incomplete morphemes and technical codes excluded;
+standalone final-visarga variants added; grouped by undiacriticized Roman lookup key.
+The readable modified resource is sanskrit-morphology-source.tsv.gz; the original XML archive and reproducible
+acquisition script are retained in the development sources. Runtime uses a separate optional disk index.
+This resource is grammatical coverage, not a frequency ranking or a claim of complete Sanskrit coverage.

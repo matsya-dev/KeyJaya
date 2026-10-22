@@ -1,0 +1,41 @@
+name: Report a bug
+description: Report a missed conversion, unwanted change, or app problem.
+title: "[Bug]: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: KeyJaya version
+      placeholder: "For example: 1.9.4"
+    validations:
+      required: true
+  - type: input
+    id: editor
+    attributes:
+      label: App and editing area
+      description: Include the app version if known and the specific field or editor.
+      placeholder: "For example: Word body text, Track Changes off"
+    validations:
+      required: true
+  - type: input
+    id: encoding
+    attributes:
+      label: Font and encoding setting
+      placeholder: "For example: ScaGoudy, Encoding Auto"
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Give the exact test text, keys pressed, and actual and expected results. Mention typing speed, pasted text, or a moved caret when relevant.
+      placeholder: |
+        1. Type ...
+        2. Press ...
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Other details
+      description: Describe delays, formatting changes, or whether restarting helps. Remove private text from screenshots and logs before attaching them.

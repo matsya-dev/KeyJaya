@@ -1,0 +1,36 @@
+{
+  "repository": "https://github.com/LibreOffice/dictionaries",
+  "commit": "2bb5f4cd04b2a0a3cba85ce9879c99ace1b10221",
+  "files": [
+    {
+      "name": "COPYING",
+      "url": "https://raw.githubusercontent.com/LibreOffice/dictionaries/2bb5f4cd04b2a0a3cba85ce9879c99ace1b10221/hi_IN/COPYING",
+      "bytes": 18009,
+      "sha256": "204d8eff92f95aac4df6c8122bc1505f468f3a901e5a4cc08940e0ede1938994"
+    },
+    {
+      "name": "Copyright",
+      "url": "https://raw.githubusercontent.com/LibreOffice/dictionaries/2bb5f4cd04b2a0a3cba85ce9879c99ace1b10221/hi_IN/Copyright",
+      "bytes": 834,
+      "sha256": "67e86e61e452247c2c491b63629799dec1d6dd4cf4aae47548f5141cf3707098"
+    },
+    {
+      "name": "README_hi_IN.txt",
+      "url": "https://raw.githubusercontent.com/LibreOffice/dictionaries/2bb5f4cd04b2a0a3cba85ce9879c99ace1b10221/hi_IN/README_hi_IN.txt",
+      "bytes": 2754,
+      "sha256": "2b373a1e07efe18e89c04c7f69bd540681a5926edcb478a4331d0df387861487"
+    },
+    {
+      "name": "hi_IN.aff",
+      "url": "https://raw.githubusercontent.com/LibreOffice/dictionaries/2bb5f4cd04b2a0a3cba85ce9879c99ace1b10221/hi_IN/hi_IN.aff",
+      "bytes": 12671,
+      "sha256": "3ab96772dc3d1cdbec4141798efb8b7a091b92c9acbeb5dfd3c4998a5c508302"
+    },
+    {
+      "name": "hi_IN.dic",
+      "url": "https://raw.githubusercontent.com/LibreOffice/dictionaries/2bb5f4cd04b2a0a3cba85ce9879c99ace1b10221/hi_IN/hi_IN.dic",
+      "bytes": 5004835,
+      "sha256": "1e01f962a02638ef73e3f8de3c44bfd854f7059d31c9fa96cff0b73a2840f9d9"
+    }
+  ]
+}

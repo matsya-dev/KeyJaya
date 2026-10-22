@@ -1,0 +1,6 @@
+# Preferred spellings for common script conversion. Save, then Reload configuration.
+# Three TAB-separated columns: Roman input, Devanagari output, Bengali output.
+# Leave one target column empty to use its normal conversion.
+# Precise script conversion bypasses these preferences.
+# Example (uncomment to enable):
+# kala	काल	কাল

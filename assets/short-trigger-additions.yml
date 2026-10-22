@@ -1,0 +1,11 @@
+# Explicitly requested additions. Apply once during the next upgrade.
+# Existing values win, and later user deletions remain respected.
+matches:
+  - trigger: 'SBB'
+    replace: 'Sārvabhauma Bhaṭṭācārya'
+  - trigger: 'SBB>'
+    replace: 'Sārvabhauma Bhaṭṭācārya'
+  - trigger: 'SBB<'
+    replace: 'Särvabhauma Bhaööäcärya'
+  - trigger: 'SBB?'
+    replace: 'Sarvabhauma Bhattacarya'

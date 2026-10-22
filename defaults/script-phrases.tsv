@@ -1,0 +1,8 @@
+# Context-aware script spellings. Save, then Reload configuration. Common mode only.
+# Three TAB-separated columns: Roman phrase, Devanagari phrase, Bengali phrase.
+# At least two words; each output must have the same word count as its input.
+# Longest matching phrase wins; spaces/Tabs/NBSP are preserved. Never matches across a newline.
+# Leave one target column empty to use normal conversion for that target.
+# Examples (uncomment to enable):
+# kala samay	काल समय	কাল সময়
+# kala rang	काला रंग	কালো রং

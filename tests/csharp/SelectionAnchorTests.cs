@@ -1,0 +1,3 @@
+using System;namespace KeyJaya {public static class SelectionAnchorTests {
+ public static int Main(){int passed=0;foreach(string prefix in new[]{"","Earlier untouched ","A\nB\t ","কৃষ্ণ रāja ",new string('x',200000)}){var anchor=new SelectionAnchor(prefix);if(!anchor.Matches(prefix)||anchor.Matches(prefix+" ")||anchor.Matches(null))throw new Exception("anchor scope");passed+=3;if(prefix.Length>0){string changed=(prefix[0]=='x'?"y":"x")+prefix.Substring(1);if(anchor.Matches(changed))throw new Exception("changed preceding text accepted");passed++;}}try{new SelectionAnchor(new string('x',200001));throw new Exception("unbounded anchor accepted");}catch(ArgumentException){passed++;}Console.WriteLine("PASS: "+passed+" FAIL: 0");return 0;}
+}}

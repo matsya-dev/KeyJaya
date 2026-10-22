@@ -1,0 +1,46 @@
+# Font name<TAB>unicode, balaram, or ignore. Save then Reload configuration.
+# Exact names, case insensitive; extra whitespace and a leading @ are ignored.
+# Unknown/unavailable fonts default to Unicode. Incompatible legacy script fonts are ignored.
+Balaram	balaram
+Balaram Bold	balaram
+Balaram BoldItalic	balaram
+Balaram Italic	balaram
+BellCentennial	balaram
+BellCentennial Normal	balaram
+ScaBenguit	balaram
+ScaBenguit Bold	balaram
+ScaCheltenham	balaram
+ScaCheltenham  Italic	balaram
+ScaCheltenham Bold	balaram
+ScaFrizQuadrata	balaram
+ScaFrizQuadrata Bold	balaram
+ScaGoudy	balaram
+ScaGoudy  Italic	balaram
+ScaGoudy Bold	balaram
+ScaHelvetica	balaram
+ScaHelvetica Bold	balaram
+ScaKorinna	balaram
+ScaKorinna  Italic	balaram
+ScaKorinna Bold	balaram
+ScaOptima	balaram
+ScaOptima  Italic	balaram
+ScaOptima Bold	balaram
+ScaPalatino	balaram
+ScaPalatino  Italic	balaram
+ScaPalatino Bold	balaram
+ScaSabon	balaram
+ScaSabon  Italic	balaram
+ScaSabon Bold	balaram
+ScaTimes	balaram
+ScaTimes  Italic	balaram
+ScaTimes Bold	balaram
+Inbenb	ignore
+Inbenb 11	ignore
+Inbeni	ignore
+Inbeni 11	ignore
+Inbeno	ignore
+Inbeno 11	ignore
+Inbenr	ignore
+Inbenr 11	ignore
+Indevr	ignore
+Indevr 20	ignore
