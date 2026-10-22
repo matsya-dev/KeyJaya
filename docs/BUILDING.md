@@ -78,3 +78,13 @@ repository defaults were organized separately.
 deliberately detects drift from that baseline. After an intentional reviewed
 source/data update, refresh the corresponding baseline/manifest and version;
 do not bypass a mismatch without understanding the changed files.
+
+## Documentation preview and compiled-app probe
+
+After building, run `./tools/verify_app.ps1` to check the compiled app in a
+noninteractive probe. It loads conversion code without starting the resident.
+
+`./tools/render_tray_menu.ps1` regenerates `docs/images/tray-menu.png` from the
+app's actual tray controls and factory settings. It does not display the menu,
+capture the desktop, or read installed user configuration. Review the image
+before committing it, then run `python tools/check_docs.py` to check local links.

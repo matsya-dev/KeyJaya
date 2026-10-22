@@ -10,6 +10,8 @@
 *.yml text eol=lf
 *.ini text eol=lf
 *.ico binary
+*.png binary
+*.gif binary
 *.gz binary
 *.pdf binary
 
