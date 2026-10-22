@@ -6,9 +6,9 @@
 
 # KeyJaya
 
-Write Sanskrit and Bengali more easily, right where you type. KeyJaya is a
-Windows tray app that adds diacritics, expands abbreviations, and converts text
-between Unicode, Balarama, ITRANS, Devanagari, and Bengali script.
+Write Sanskrit and Bengali diacritics quickly, easily, and automatically... right where you type. 
+KeyJaya is a Windows tray app that adds diacritics, expands abbreviations, and converts text
+between ASCII, Unicode IAST, Balarama (Legacy), ITRANS, Devanagari, and Bengali script.
 
 **[Download for Windows](https://github.com/matsya-dev/KeyJaya/releases/latest)**
 · [User guide](docs/USER_GUIDE.md)
