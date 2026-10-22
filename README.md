@@ -18,16 +18,15 @@ between ASCII, Unicode, Balarama (Legacy), ITRANS, Devanagari, and Bengali scrip
 
 ## What you can do
 
-- Add diacritics to a letter, word, or selection, and cycle through spellings.
-- Work with Unicode and Balarama fonts, with automatic font detection.
+- Add diacritics to a letter, word, or selection, and cycle through spelling variations.
+- Works with Unicode and Balarama fonts, with automatic font detection.
 - Convert scripts and insert scripture verses and translations.
 - Expand your own abbreviations and customize the keyboard shortcuts.
-- Correct spelling and contractions, and apply Sanskrit/Bengali italics.
 
 ## Get started
 
 1. Download the **KeyJaya Setup** `.exe` from the latest release and run it.
-2. Find the white **की** icon in the Windows system tray.
+2. Verify the white **की** icon is in the Windows system tray.
 3. Type `Krishna` in a text field and tap **Left Ctrl** to get `Kṛṣṇa`.
 
 Requires **Windows x64 and .NET Framework 4.8**. Balarama fonts are supplied
