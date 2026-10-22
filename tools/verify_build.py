@@ -1,8 +1,12 @@
 """Check package bytes and exercise installation only inside ignored out/fixtures."""
 from pathlib import Path
-import hashlib, json, subprocess, zipfile
+import argparse, hashlib, json, subprocess, zipfile
 
 root = Path(__file__).resolve().parent.parent
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--target', type=Path, default=root/'out/verification/install',
+                    help='Fresh disposable installation directory beneath out/. Existing directories are refused.')
+args = parser.parse_args()
 app = root/'out/app'
 version = (root/'VERSION').read_text().strip()
 installer = root/f'out/KeyJaya-Setup-v{version}.exe'
@@ -18,7 +22,8 @@ for name in ('LICENSE','THIRD_PARTY_NOTICES.md','docs/LICENSING.md'):
     assert (app/name).read_bytes() == (root/name).read_bytes(), 'Missing or changed notice: '+name
 for name in files:
     assert not name.startswith(('logs/','state/','backups/')), name
-target = root/'out/verification/install'
+target = (root/args.target).resolve()
+assert target.is_relative_to((root/'out').resolve()) and target != (root/'out').resolve(), 'Verification target must stay below out/.'
 assert not target.exists(), 'Preserve an existing install fixture; choose a fresh verification directory.'
 target.parent.mkdir(parents=True,exist_ok=True)
 assert target.resolve().is_relative_to((root/'out').resolve())
@@ -37,5 +42,5 @@ install()
 assert yaml.read_bytes() == before, 'Upgrade changed user triggers'
 summary = {'version':version,'package_files':len(files),'fresh_install':True,
            'upgrade_preserves_trigger_edit':True,'live_installation':False,'failures':0}
-(root/'out/verification/build-results.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+(target.parent/'build-results.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
 print(f'PASS {len(files)} packaged file hashes; isolated clean install and edited-trigger upgrade; live app untouched.')

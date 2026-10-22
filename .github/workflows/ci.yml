@@ -1,0 +1,80 @@
+name: Windows checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Windows / ${{ matrix.shell }}
+    runs-on: windows-2022
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [pwsh, powershell]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - name: Audit source and documentation
+        run: |
+          python tools/audit_project.py
+          if ($LASTEXITCODE -ne 0) { throw 'Source audit failed.' }
+          python tools/check_docs.py
+          if ($LASTEXITCODE -ne 0) { throw 'Documentation check failed.' }
+          python tools/fetch_hindi_sources.py --check
+          if ($LASTEXITCODE -ne 0) { throw 'Dictionary source check failed.' }
+      - name: Build verification installer
+        run: ./build.ps1
+      - name: Check compiled application
+        run: ./tools/verify_app.ps1
+      - name: Run all 42 isolated regression suites
+        run: ./test.ps1 -Full
+      - name: Verify package, clean install, and upgrade
+        run: |
+          python tools/verify_build.py
+          if ($LASTEXITCODE -ne 0) { throw 'Installer verification failed.' }
+      - name: Write check summary
+        if: always()
+        run: |
+          $summary = @('## Windows verification', '', ('Shell: ${{ matrix.shell }}'))
+          if (Test-Path -LiteralPath 'out/tests/results.json') {
+            $results = @(Get-Content -LiteralPath 'out/tests/results.json' -Raw | ConvertFrom-Json)
+            $failed = @($results | Where-Object { $_.exit_code -ne 0 }).Count
+            $summary += ('Regression suites recorded: ' + $results.Count + '; failures: ' + $failed)
+          }
+          if (Test-Path -LiteralPath 'out/verification/build-results.json') {
+            $package = Get-Content -LiteralPath 'out/verification/build-results.json' -Raw | ConvertFrom-Json
+            $summary += ('Package files verified: ' + $package.package_files + '; fresh install and edited-trigger upgrade passed.')
+          }
+          $summary += @('', 'GUI editors, physical typing, sign-in, and sleep/wake are outside these checks. No installed user profile is used.')
+          [IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, ($summary -join "`n"), (New-Object Text.UTF8Encoding($false)))
+      - name: Retain verification logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verification-${{ matrix.shell }}
+          path: |
+            out/tests/*.txt
+            out/tests/results.json
+            out/verification/build-results.json
+          if-no-files-found: ignore
+          retention-days: 7
