@@ -14,24 +14,24 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 def text_sha(path):
     return hashlib.sha256(path.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
-version = (root/'VERSION').read_text().strip()
-license_text = (root/'LICENSE').read_text()
+version = (root/'VERSION').read_text(encoding='utf-8-sig').strip()
+license_text = (root/'LICENSE').read_text(encoding='utf-8-sig')
 check(license_text.startswith('MIT License\n'), 'Original code license retained')
 check('Copyright (c) 2026 matsya-dev' in license_text, 'Original copyright notice retained')
 check(version == re.search(r'Current\s*=\s*"([^"]+)"', (root/'src/Core.cs').read_text(encoding='utf-8-sig')).group(1), 'Version matches source')
-baseline = json.loads((root/'docs/SOURCE_BASELINE.json').read_text())
+baseline = json.loads((root/'docs/SOURCE_BASELINE.json').read_text(encoding='utf-8-sig'))
 for name, expected in baseline['production_source_normalized_sha256'].items():
     check(text_sha(root/name) == expected, 'Production source baseline: '+name)
-manifest = json.loads((root/'data/manifest.json').read_text())
+manifest = json.loads((root/'data/manifest.json').read_text(encoding='utf-8-sig'))
 actual = {'data/'+p.name for p in (root/'data').iterdir() if p.is_file() and p.name not in ['manifest.json','README.md']}
 check(actual == set(manifest['files']), 'Complete runtime data inventory')
 for name, expected in manifest['files'].items():
     check(sha(root/name) == expected, 'Runtime data integrity: '+name)
-check('email' not in (root/'defaults/short-triggers.yml').read_text().lower(), 'No personal email trigger in defaults')
-check('email' not in (root/'assets/short-trigger-defaults.yml').read_text().lower(), 'No personal email trigger in factory restoration')
-check(not re.search(r'(?m)^email[<?>:\t]', (root/'data/short-triggers.tsv').read_text()), 'No personal email fallback trigger')
+check('email' not in (root/'defaults/short-triggers.yml').read_text(encoding='utf-8-sig').lower(), 'No personal email trigger in defaults')
+check('email' not in (root/'assets/short-trigger-defaults.yml').read_text(encoding='utf-8-sig').lower(), 'No personal email trigger in factory restoration')
+check(not re.search(r'(?m)^email[<?>:\t]', (root/'data/short-triggers.tsv').read_text(encoding='utf-8-sig')), 'No personal email fallback trigger')
 required_settings = {'start_with_windows','autocorrect_spelling','auto_contractions','encoding_override','italicize_conversions','script_language','script_precise','preserve_verse_markers'}
-settings = {line.split('=',1)[0] for line in (root/'defaults/settings.ini').read_text().splitlines() if line and not line.startswith('#')}
+settings = {line.split('=',1)[0] for line in (root/'defaults/settings.ini').read_text(encoding='utf-8-sig').splitlines() if line and not line.startswith('#')}
 check(settings == required_settings, 'Current default settings only')
 allowed = {'src','assets','data','defaults','tests','third_party','tools','docs','.github'}
 denied = {'.exe','.dll','.pdb','.lnk','.log','.tmp','.bak','.epub','.mobi','.azw','.azw3','.kfx','.nfo','.rtf','.doc','.docx','.asd','.zip'}
@@ -61,5 +61,5 @@ for path in root.rglob('*'):
 check((root/'data/sanskrit-morphology-LGPLLR.pdf').exists(), 'Sanskrit license retained')
 check((root/'data/hindi-COPYING').exists(), 'Hindi license retained')
 check((root/'data/english-dictionary-notices.txt').exists(), 'English notices retained')
-check(len(json.loads((root/'tests/suites.json').read_text())) == 42, 'Isolated test registry complete')
+check(len(json.loads((root/'tests/suites.json').read_text(encoding='utf-8-sig'))) == 42, 'Isolated test registry complete')
 print(f'PASS {checks} repository checks; source/data intact; generated outputs, personal paths and email expansions excluded.')
