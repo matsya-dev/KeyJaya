@@ -2,6 +2,24 @@ using System;using System.IO;using System.Linq;using System.Text.RegularExpressi
 namespace KeyJaya {public static class FontCyclingTests {
 static long passed,failed;static void Check(bool ok,string label){if(ok)passed++;else if(failed++<40)Console.WriteLine("FAIL "+label);}
 static void Equal(string expected,string actual,string label){Check(expected==actual,label+" expected="+expected+" actual="+actual);}
+static void CleanerCycles(Core core){
+ foreach(string mode in new[]{"unicode","balaram"}){
+  char suffix=mode=="balaram"?'<':'>';
+  foreach(string input in new[]{"Krsna","Krishna","Kṛṣṇa","Krṣṇa","Kṛsṇa","krsna","krishna","krṣṇa"}){
+   string plain=EncodingMap.Ascii(input);string[] expected=new[]{Core.Target(EncodingMap.Case(input,"kṛṣṇa"),mode),Core.Target(EncodingMap.Case(input,"kṛṣṇā"),mode),plain};
+   Check(core.Cycle(input,suffix).SequenceEqual(expected),"clean Krsna cycle "+input+" "+mode);
+   Check(core.CaretChoices(input,mode).SequenceEqual(expected),"clean caret cycle "+input+" "+mode);
+   Check(core.ClipboardChoices(input,mode,"auto").SequenceEqual(expected),"clean clipboard cycle "+input+" "+mode);
+  }
+  string[] rama={Core.Target("Rāma",mode),Core.Target("Ramā",mode),Core.Target("Rāmā",mode),"Rama"};
+  Check(core.Cycle("Rama",suffix).SequenceEqual(rama),"all valid Rama forms retained in order "+mode);
+  foreach(string input in new[]{"Srila","Siva","sastra","prasada"}){
+   string[] choices=core.Cycle(input,suffix);Check(choices.Length>=2,"verified alternatives retained "+input+" "+mode);
+   foreach(string malformed in new[]{"śrila","srīla","śṛīla","ṣrīla","śīva","ṣiva","sāstra","śāśtra","praśāda"})Check(!choices.Contains(Core.Target(EncodingMap.Case(input,malformed),mode)),"partial/noisy form removed "+malformed+" "+mode);
+  }
+  foreach(string english in new[]{"an","age","since","EnglishUnknown"})Check(core.CaretChoices(english,mode).Length==0,"English protection retained "+english);
+ }
+}
 public static int Main(string[] args){
 var font=new FontEncoding(null);
 foreach(string family in new[]{"Balaram","BellCentennial","ScaBenguit","ScaCheltenham","ScaFrizQuadrata","ScaGoudy","ScaHelvetica","ScaKorinna","ScaOptima","ScaPalatino","ScaSabon","ScaTimes"})foreach(string style in new[]{""," Bold"," Italic"," BoldItalic"," Normal"}){
@@ -48,6 +66,7 @@ foreach(string prefix in new[]{"", "Earlier untouched ", "Earlier an age since\r
  Check(!EditGuard.Locate(fixture,prefix.Length,fixture.Length,"raja",out begin),"pasted selection rejected");
 }
 using(var core=new Core(args[0])){
+CleanerCycles(core);
 foreach(string protectedWord in new[]{"an","age","since","prana","EnglishUnknown","prana's","Prana’s","prana’s","age's","since’s"})foreach(string protectedMode in new[]{"unicode","balaram"})Check(core.CaretChoices(protectedWord,protectedMode).Length==0,"explicit English/collision caret protection");
 Check(core.CaretChoices("raja","unicode").Contains("rāja")&&core.CaretChoices("raja","unicode").Contains("rājā"),"raja has both requested Unicode variants");
 Check(core.CaretChoices("raja","balaram").Contains("räja")&&core.CaretChoices("raja","balaram").Contains("räjä"),"raja has both requested Balaram variants");

@@ -1,4 +1,34 @@
-# Clean repository verification
+# Release verification
+
+## KeyJaya 1.9.5 — 23 October 2026
+
+- All 44 isolated suites passed: **26,935,872 assertions; zero failures**. The
+  final development run includes the browser paragraph-boundary fix and repaired
+  scripture identifiers. Release packaging changes only the runtime version.
+- All **2,734,965 indexed records** passed bounds, order, UTF-8, and key/hash
+  checks. All 30 runtime-data file hashes passed. The 276 identifier repairs
+  preserved all 226,032 scripture payloads: **34,825,664 text bytes unchanged**.
+- The owner reported passing the final manual checks in disposable Word content
+  (ScaGoudy, paired verse ranges, italics, formatting, undo and Track Changes),
+  WhatsApp (range insertion followed by immediate typing), and Excel/Obsidian
+  (word cycles, single-letter conversion and subsequent normal typing).
+- The 1.9.5 compiled application passed 19 noninteractive probe checks. All 53
+  packaged file hashes matched the ZIP payload. Isolated fresh installation and
+  upgrade preserved an edited trigger file. These checks did not install over
+  the active app, change startup registration, or touch open documents.
+- The installer resource matched the packaged ZIP byte-for-byte by SHA-256.
+  An injected failure after swapping the isolated installation restored all 57
+  fixture files with their original hashes, including the edited triggers.
+- Source, bundled Hindi-source hashes, workflow syntax, and local documentation
+  checks passed. The accepted source baseline is now 1.9.5; earlier baselines
+  remain available in Git history.
+
+The installer is unsigned. These results cover the tested logic and reported
+editor interactions; they do not guarantee universal compatibility, response
+times, or Windows sign-in/sleep/wake behavior. Those interruption checks remain
+outside this release's completed manual checks.
+
+## Initial public source preparation — 1.9.4
 
 Verified on 22 October 2026 against the 1.9.4 source baseline.
 

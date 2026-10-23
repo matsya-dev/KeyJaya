@@ -196,6 +196,16 @@ public static class Native {
         public bool Active{get{lock(gate)return active;}}
         public int Count{get{lock(gate)return queued.Count+(deferred.HasValue?1:0);}}
         public bool FinishIfEmpty(IntPtr window){lock(gate){if(!active||owner!=window||queued.Count!=0||deferred.HasValue||inFlight.HasValue)return false;active=false;owner=IntPtr.Zero;initialReleases.Clear();heldModifiers.Clear();return true;}}
+        // Failed discovery may accumulate more bare Ctrl taps. They contain no
+        // text and cannot repair an unavailable target. Retire only complete
+        // Ctrl down/up pairs; never discard typing, chords, mouse input, or a
+        // release whose corresponding down may already have reached Windows.
+        public bool FinishIfOnlyControlTaps(IntPtr window){lock(gate){
+            if(!active||owner!=window||inFlight.HasValue||heldModifiers.Count!=0)return false;
+            var keys=deferred.HasValue?new[]{deferred.Value}.Concat(queued):queued.AsEnumerable();var pressed=new System.Collections.Generic.HashSet<uint>();bool any=false;
+            foreach(Input item in keys){if(item.type!=1)return false;var key=item.union.keyboard;uint vk=key.vk==0x11?0xA2u:key.vk;if(vk!=0xA2&&vk!=0xA3)return false;bool up=(key.flags&2)!=0;if(up){if(!pressed.Remove(vk))return false;}else if(!pressed.Add(vk))return false;any=true;}
+            if(!any||pressed.Count!=0)return false;queued.Clear();deferred=null;active=false;owner=IntPtr.Zero;initialReleases.Clear();return true;
+        }}
         public bool Owns(IntPtr window){lock(gate)return active&&owner==window;}
         public bool Begin(IntPtr window){lock(gate){if(active)return false;owner=window;active=true;queued.Clear();initialReleases.Clear();heldModifiers.Clear();deferred=inFlight=null;return true;}}
         // Releases belonging to the initiating shortcut must reach its dispatcher
@@ -219,6 +229,10 @@ public static class Native {
         // A focus change can race SendInput. Reclaim the one in-flight event
         // before the hook forwards it, preserving its place ahead of later keys.
         public bool DeferInFlight(IntPtr window){lock(gate){if(!active||window!=owner||!inFlight.HasValue||deferred.HasValue)return false;deferred=inFlight;inFlight=null;return true;}}
+        // A drained key can itself start the next conversion. Acknowledge its
+        // delivery before that conversion tries to finish an otherwise empty
+        // queue; scheduling the next drain alone leaves a stale in-flight key.
+        public bool AcknowledgeInFlight(IntPtr window){lock(gate){if(!active||window!=owner||!inFlight.HasValue)return false;inFlight=null;return true;}}
         // Keep capturing fresh input until every older event has been delivered.
         // A replayed delimiter may start another correction before the next event.
         public Input[] DrainNext(IntPtr window){lock(gate){if(!active||window!=owner)return null;if(queued.Count==0&&!deferred.HasValue){active=false;owner=IntPtr.Zero;heldModifiers.Clear();initialReleases.Clear();inFlight=null;return new Input[0];}Input next;if(deferred.HasValue){next=deferred.Value;deferred=null;}else next=queued.Dequeue();inFlight=next;if(next.type==1)next.union.keyboard.extra=new UIntPtr(DrainedInput);else next.union.mouse.extra=new UIntPtr(DrainedInput);return new[]{next};}}
@@ -248,6 +262,7 @@ public static class Native {
     }
     public static bool CorrectAutomatic(string input,string output,string suffix){foreach(int modifier in new[]{0x10,0x11,0x12,0x5B,0x5C})if((GetAsyncKeyState(modifier)&0x8000)!=0)return false;Input[] keys=AutomaticCorrectionInput(input,output,suffix);if(keys==null)return false;uint sent=SendInput((uint)keys.Length,keys,Marshal.SizeOf(typeof(Input)));if(sent!=keys.Length){Input[] release={Key(0x10,true)};SendInput(1,release,Marshal.SizeOf(typeof(Input)));return false;}return true;}
     public static bool TypeText(string text){Input[] input=UnicodeText(text);return input!=null&&SendInput((uint)input.Length,input,Marshal.SizeOf(typeof(Input)))==input.Length;}
+    public static bool TextNeedsClipboard(string text,bool formatted){return formatted||UnicodeText(text)==null;}
     [DllImport("user32.dll")]public static extern bool GetCursorPos(out Point p);
     [DllImport("user32.dll")]public static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")]public static extern short GetKeyState(int key);
@@ -319,15 +334,15 @@ public static class Native {
     public static bool SelectFieldRange(int start,int end){if(start<0||end<start||end>4096)return false;var keys=new System.Collections.Generic.List<Input>();keys.Add(Key(0x11,false));keys.Add(Key(0x24,false));keys.Add(Key(0x24,true));keys.Add(Key(0x11,true));for(int n=0;n<start;n++){keys.Add(Key(0x27,false));keys.Add(Key(0x27,true));}if(end>start){keys.Add(Key(0x10,false));for(int n=start;n<end;n++){keys.Add(Key(0x27,false));keys.Add(Key(0x27,true));}keys.Add(Key(0x10,true));}return SendInput((uint)keys.Count,keys.ToArray(),Marshal.SizeOf(typeof(Input)))==keys.Count;}
     // A known single-line buffer permits navigation from its nearest end.
     // The caller must still prove the resulting selection before replacement.
-    public static bool SelectFieldRange(int start,int end,int length){
-        Input[] keys=FieldRangeKeys(start,end,length);return keys!=null&&SendInput((uint)keys.Length,keys,Marshal.SizeOf(typeof(Input)))==keys.Length;
+    public static bool SelectFieldRange(int start,int end,int length,bool control=true){
+        Input[] keys=FieldRangeKeys(start,end,length,control);return keys!=null&&SendInput((uint)keys.Length,keys,Marshal.SizeOf(typeof(Input)))==keys.Length;
     }
-    public static Input[] FieldRangeKeys(int start,int end,int length){
+    public static Input[] FieldRangeKeys(int start,int end,int length,bool control=true){
         if(start<0||end<start||length<end||length>4096)return null;
         var keys=new System.Collections.Generic.List<Input>();
-        Action<ushort,bool,bool> chord=(key,control,shift)=>{if(control)keys.Add(Key(0x11,false));if(shift)keys.Add(Key(0x10,false));keys.Add(Key(key,false));keys.Add(Key(key,true));if(shift)keys.Add(Key(0x10,true));if(control)keys.Add(Key(0x11,true));};
-        if(start==0&&end==length&&length>2){chord(0x24,true,false);chord(0x23,true,true);return keys.ToArray();}
-        bool fromEnd=length-end<start;chord(fromEnd?(ushort)0x23:(ushort)0x24,true,false);
+        Action<ushort,bool,bool> chord=(key,useControl,shift)=>{if(useControl)keys.Add(Key(0x11,false));if(shift)keys.Add(Key(0x10,false));keys.Add(Key(key,false));keys.Add(Key(key,true));if(shift)keys.Add(Key(0x10,true));if(useControl)keys.Add(Key(0x11,true));};
+        if(start==0&&end==length&&length>2){chord(0x24,control,false);chord(0x23,control,true);return keys.ToArray();}
+        bool fromEnd=length-end<start;chord(fromEnd?(ushort)0x23:(ushort)0x24,control,false);
         int distance=fromEnd?length-end:start;ushort direction=fromEnd?(ushort)0x25:(ushort)0x27;
         for(int n=0;n<distance;n++){keys.Add(Key(direction,false));keys.Add(Key(direction,true));}
         if(end>start){keys.Add(Key(0x10,false));for(int n=start;n<end;n++){keys.Add(Key(direction,false));keys.Add(Key(direction,true));}keys.Add(Key(0x10,true));}

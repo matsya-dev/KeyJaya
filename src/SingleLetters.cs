@@ -122,7 +122,7 @@ public static class MixedWordFonts {
 }
 public static class CaretWords {
     static readonly Regex Word=new Regex(@"[\p{L}\p{M}]+(?:[-\u2011\u2013][\p{L}\p{M}]+)*(?:['’]s)?$",RegexOptions.Compiled);
-    public static string AtEnd(string prefix){if(string.IsNullOrEmpty(prefix))return null;Match match=Word.Match(prefix);if(match.Success&&match.Length<=160&&EditGuard.LeftBoundary(prefix,match.Index,match.Value))return match.Value;var span=Locate(prefix,prefix.Length,prefix.Length);return span!=null&&span.End==prefix.Length&&(match.Success&&span.Start==match.Index||Numbers.Single(span.Word)!=null)?span.Word:null;}
+    public static string AtEnd(string prefix){if(string.IsNullOrEmpty(prefix))return null;Match match=Word.Match(prefix);if(match.Success&&match.Length<=160&&EditGuard.LeftBoundary(prefix,match.Index,match.Value))return match.Value;var span=Locate(prefix,prefix.Length,prefix.Length);return span!=null&&span.End==prefix.Length&&(match.Success&&span.Start==match.Index||Numbers.Single(span.Word)!=null||Core.IsScriptureReference(span.Word))?span.Word:null;}
     static readonly Regex AnywhereWord=new Regex(@"[0-9]+[A-Z][A-Z0-9]*(?![\p{L}\p{M}])|[\p{L}\p{M}]+(?:[-\u2011\u2013][\p{L}\p{M}]+)*(?:['’]s)?",RegexOptions.Compiled);
     // A slash can separate prose words, but schemes, drive paths, domains,
     // repeated/leading slashes and filenames must not become editable words.
@@ -139,6 +139,19 @@ public static class CaretWords {
         if(text==null||caret!=selectionEnd||caret<0||caret>text.Length)return null;
         int begin=caret,end=caret;while(begin>0&&!char.IsWhiteSpace(text[begin-1])&&caret-begin<=1024)begin--;while(end<text.Length&&!char.IsWhiteSpace(text[end])&&end-caret<=1024)end++;if(end-begin>1024)return null;
         string token=text.Substring(begin,end-begin);bool slash=token.IndexOf('/')>=0;if(token.IndexOfAny(new[]{'\\','@','_'})>=0||token.StartsWith("#",StringComparison.Ordinal)||slash&&!SlashWords.IsMatch(token))return null;
+        // Scripture references include dots and optional section/output letters.
+        // Capture the entire reference before ordinary word/number matching so
+        // Ctrl cannot replace only BG, VT, or the final verse number.
+        int referenceStart=0,referenceEnd=token.Length;
+        while(referenceStart<referenceEnd&&"('\"“‘[{*".IndexOf(token[referenceStart])>=0)referenceStart++;
+        while(referenceEnd>referenceStart&&")'\"”’]},.!?:;*".IndexOf(token[referenceEnd-1])>=0)referenceEnd--;
+        string reference=token.Substring(referenceStart,referenceEnd-referenceStart);
+        if(Core.IsScriptureReference(reference)){
+            int first=begin+referenceStart,last=begin+referenceEnd;
+            if(caret>=first&&caret<=last)return new CaretWordSpan(first,last,caret,reference,"");
+            if(caret>last&&caret-last<=32&&text.Substring(last,caret-last).All(TailCharacter))return new CaretWordSpan(first,last,caret,reference,text.Substring(last,caret-last));
+            return null;
+        }
         Match numeric=Numbers.CaretMatch(token);if(numeric.Success){Group number=numeric.Groups["number"];int first=begin+number.Index,last=first+number.Length;if(Numbers.Single(number.Value)==null||caret<first)return null;return new CaretWordSpan(first,last,caret,number.Value,caret>last?text.Substring(last,caret-last):"");}
         CaretWordSpan preceding=null;foreach(Match match in AnywhereWord.Matches(token)){int start=begin+match.Index,stop=start+match.Length;if(match.Length>160||(start>0&&BoundaryCharacter(text[start-1])&&!(slash&&text[start-1]=='/'))||(stop<text.Length&&BoundaryCharacter(text[stop])&&!(slash&&text[stop]=='/')))continue;
             if(start<=caret&&caret<=stop)return Target(start,stop,caret,match.Value,"",componentOnly);
@@ -146,6 +159,14 @@ public static class CaretWords {
         }return preceding;
     }
     public static int NavigationCount(string word){if(string.IsNullOrEmpty(word)||word.Length>160)return 0;foreach(char c in word)if(char.IsSurrogate(c)||CharUnicodeInfo.GetUnicodeCategory(c)==UnicodeCategory.NonSpacingMark||CharUnicodeInfo.GetUnicodeCategory(c)==UnicodeCategory.SpacingCombiningMark||char.IsControl(c))return 0;return word.Length;}
+    // UIA character units can differ from text offsets at rich-text boundaries.
+    // A FindText candidate is usable only when its exact text on each side of
+    // the real caret agrees with the independently located word and punctuation.
+    public static bool RangeAtCaret(string word,int offset,string tail,string before,string after){
+        if(string.IsNullOrEmpty(word)||word.Length>160||tail==null||tail.Length>32||before==null||after==null||offset<0||offset>word.Length+tail.Length||!tail.All(TailCharacter))return false;
+        if(offset<=word.Length)return tail.Length==0&&before==word.Substring(0,offset)&&after==word.Substring(offset);
+        return offset==word.Length+tail.Length&&before==word+tail&&after.Length==0;
+    }
     public static int ReplacementOffset(int originalOffset,int originalLength,int replacementLength){return originalOffset>=originalLength?replacementLength+originalOffset-originalLength:Math.Min(originalOffset,replacementLength);}
     public static bool MatchesPhysical(string word,int offset,string tail,string last){if(string.IsNullOrEmpty(last))return true;if(offset<=0)return false;string observed=offset<=word.Length?word.Substring(offset-1,1):string.IsNullOrEmpty(tail)?null:tail.Substring(tail.Length-1,1);return observed!=null&&EditGuard.CaseEquivalent(last,observed);}
     public static bool MatchesTyped(string actual,string token,string last){if(last!=null&&!char.IsLetter(last,0)&&CharUnicodeInfo.GetUnicodeCategory(last,0)!=UnicodeCategory.NonSpacingMark)return false;return string.IsNullOrEmpty(token)||AtEnd(token)!=token||EditGuard.CaseEquivalent(token,actual);}

@@ -46,7 +46,7 @@ jobs:
         run: ./build.ps1
       - name: Check compiled application
         run: ./tools/verify_app.ps1
-      - name: Run all 42 isolated regression suites
+      - name: Run all isolated regression suites
         run: ./test.ps1 -Full
       - name: Verify package, clean install, and upgrade
         run: |

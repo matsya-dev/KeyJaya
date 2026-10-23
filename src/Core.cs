@@ -7,7 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace KeyJaya {
-public static class Version { public const string Current = "1.9.4"; }
+public static class Version { public const string Current = "1.9.5"; }
 public static class EncodingMap {
     const string Indic = "āīūṛṝḷḹṅñṭḍṇśṣḥṁṃĀĪŪṚṜḶḸṄÑṬḌṆŚṢḤṀṂ";
     const string Legacy = "äéüåèÿýìïöòëçñùààÄÉÜÅÈßÝÌÏÖÒËÇÑÙÀÀ";
@@ -121,7 +121,7 @@ public sealed partial class Core : IDisposable {
     static readonly Regex Words=new Regex(@"[\p{L}\p{M}]+(?:['’]s)?",RegexOptions.Compiled);
     static readonly Regex Compounds=new Regex(@"[\p{L}\p{M}]+(?:[-\u2011\u2013'’][\p{L}\p{M}]+)*",RegexOptions.Compiled);
     static readonly Regex Protected=new Regex(@"/\*[\s\S]*?\*/|(?:https?://|www\.)[^\s]+|[\w.+-]+@[\w.-]+\.[\w-]+|[A-Za-z]:[\\/][^\s]+|\\\\[^\s]+",RegexOptions.Compiled|RegexOptions.IgnoreCase);
-    static readonly Regex ScripturePattern=new Regex(@"^(BG|SB|CC|CB|ISO|BS|NOI)(\d+(?:\.\d+){0,2}|INV)(VT|V|T)?(R)?([><?])$",RegexOptions.IgnoreCase|RegexOptions.Compiled);
+    static readonly Regex ScripturePattern=new Regex(@"^(BG|SB|CC|CB|ISO|BS|NOI)(\d+(?:\.\d+){0,2}(?:[-\u2011\u2013]\d+(?:\.\d+){0,2})?|INV)(VT|V|T)?(R)?([><?])$",RegexOptions.IgnoreCase|RegexOptions.Compiled);
     public Core(string root,string spellingPreferencePath=null) {
         try {
         AutomaticCorrections=new CorrectionSettings(Path.Combine(Configuration.Folder(root),"settings.ini"));
@@ -156,6 +156,21 @@ public sealed partial class Core : IDisposable {
     static readonly Regex CtrlShortPattern=new Regex(@"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$",RegexOptions.Compiled|RegexOptions.CultureInvariant);
     public static bool CtrlOnlyShort(string trigger){return trigger!=null&&CtrlShortPattern.IsMatch(trigger);}
     public bool HasShortAbbreviation(string token){return token!=null&&(Short.ContainsKey(token)||Short.ContainsKey(token+">")||Short.ContainsKey(token+"<")||Short.ContainsKey(token+"?"));}
+    static string NormalizeScriptureTrigger(string trigger){return Regex.Replace(trigger,@"^(?i:(CC|CB)(Adi|Madhya|Antya))(?=\d)",m=>m.Groups[1].Value.ToUpperInvariant()+(m.Groups[2].Value.Equals("Adi",StringComparison.OrdinalIgnoreCase)?"1":m.Groups[2].Value.Equals("Madhya",StringComparison.OrdinalIgnoreCase)?"2":"3")+".");}
+    const int MaximumScriptureRange=200;
+    static bool TryScriptureRange(string reference,out string prefix,out int first,out int last){
+        prefix=null;first=last=0;int dash=reference.IndexOfAny(new[]{'-','\u2011','\u2013'});if(dash<0)return false;
+        string left=reference.Substring(0,dash),right=reference.Substring(dash+1);int dot=left.LastIndexOf('.');prefix=dot<0?"":left.Substring(0,dot+1);
+        if(right.IndexOf('.')>=0){string[] source=left.Split('.'),target=right.Split('.');if(target.Length>source.Length)return false;for(int n=0;n<target.Length-1;n++)if(source[source.Length-target.Length+n]!=target[n])return false;right=target[target.Length-1];}
+        return int.TryParse(left.Substring(dot+1),NumberStyles.None,CultureInfo.InvariantCulture,out first)&&int.TryParse(right,NumberStyles.None,CultureInfo.InvariantCulture,out last)&&first>0&&last>=first&&(long)last-first<MaximumScriptureRange;
+    }
+    public static bool IsScriptureReference(string token){
+        if(string.IsNullOrEmpty(token)||token.Length>160)return false;Match match=ScripturePattern.Match(NormalizeScriptureTrigger(token)+">");if(!match.Success)return false;
+        string reference=match.Groups[2].Value;if(reference.IndexOfAny(new[]{'-','\u2011','\u2013'})<0)return true;string prefix;int first,last;return TryScriptureRange(reference,out prefix,out first,out last);
+    }
+    public static string CtrlScriptureTrigger(string token,string mode){return (mode=="unicode"||mode=="balaram"||mode=="plain")&&IsScriptureReference(token)?token+(mode=="balaram"?"<":mode=="plain"?"?":">"):null;}
+    public string CtrlExpansion(string token,string mode){string configured=CtrlShort(token,mode);if(configured!=null)return configured;string trigger=CtrlScriptureTrigger(token,mode);return trigger==null?null:Trigger(trigger);}
+    public ItalicSpan[] CtrlItalics(string token,string output,string mode){string trigger=CtrlScriptureTrigger(token,mode);return trigger==null?ItalicWords(output,mode):TriggerItalics(trigger,output,mode);}
     public string CtrlShort(string token,string mode){string exact=CtrlShortExact(token,mode);if(exact!=null)return exact;if(token==null||!CompoundForms.Pattern.IsMatch(token))return null;bool found=false;string result=Regex.Replace(token,@"[\p{L}\p{M}\p{N}]+",m=>{string value=CtrlShortExact(m.Value,mode);if(value==null)return Word(m.Value,mode);found=true;return value;});return found?result:null;}
     string CtrlShortExact(string token,string mode){
         if(!CtrlOnlyShort(token)||mode!="unicode"&&mode!="balaram"&&mode!="plain")return null;
@@ -316,7 +331,7 @@ public sealed partial class Core : IDisposable {
         bool indic=false;string converted=Words.Replace(stem,m=>{if(KeepWord(m.Value))return m.Value;string decoded;if(DecodeItrans(m.Value,out decoded)){indic=true;return Target(decoded,mode);}string value=Word(m.Value,mode);if(value!=m.Value||RecognizedIndic(m.Value,mode))indic=true;return value;});
         if(!indic)return false;output=converted+possessive;return true;
     }
-    public string[] CompoundChoices(string input,string mode){string value;if(!TryCompound(input,mode,out value))return new string[0];bool[] protect=CompoundProtectedMask(input);int offset=0;string plain=Words.Replace(input,m=>{offset=m.Index;bool kept=protect!=null&&protect.Skip(offset).Take(m.Length).All(x=>x);if(kept)return m.Value;string decoded=m.Value,itrans;if(DecodeItrans(decoded,out itrans))decoded=itrans;else if(EncodingMap.IsLegacy(decoded)&&!EncodingMap.UnambiguousIndic(decoded))decoded=EncodingMap.FromBalaram(decoded);return EncodingMap.Ascii(decoded);});var variants=new List<string>{value};{string dictionaryInput=!EncodingMap.UnambiguousIndic(input)&&EncodingMap.IsLegacy(input)&&!KnownUnicode(input)?EncodingMap.FromBalaram(input):input;string rawKey=EncodingMap.Ascii(dictionaryInput).ToLowerInvariant().Replace('\u2011','-').Replace('\u2013','-');string recorded=string.Join("\x1f",new[]{cycles.Get(rawKey),cycles.Get(CompoundForms.Key(dictionaryInput))}.Where(x=>x!=null).Select(x=>x.Split('\0')[0]));if(recorded.Length>0)foreach(string form in recorded.Split('\x1f'))if(CompoundForms.Pattern.IsMatch(form)&&CompoundForms.Separator.Split(form).Length==CompoundForms.Separator.Split(input).Length)variants.Add(Target(EncodingMap.Case(input,CompoundForms.PreserveSeparators(input,form)),mode));}return variants.Where(x=>x!=plain).Concat(new[]{plain}).Distinct().ToArray();}
+    public string[] CompoundChoices(string input,string mode){string value;if(!TryCompound(input,mode,out value))return new string[0];bool[] protect=CompoundProtectedMask(input);int offset=0;string plain=Words.Replace(input,m=>{offset=m.Index;bool kept=protect!=null&&protect.Skip(offset).Take(m.Length).All(x=>x);if(kept)return m.Value;string decoded=m.Value,itrans;if(DecodeItrans(decoded,out itrans))decoded=itrans;else if(EncodingMap.IsLegacy(decoded)&&!EncodingMap.UnambiguousIndic(decoded))decoded=EncodingMap.FromBalaram(decoded);return EncodingMap.Ascii(decoded);});var variants=new List<string>{value};{string dictionaryInput=!EncodingMap.UnambiguousIndic(input)&&EncodingMap.IsLegacy(input)&&!KnownUnicode(input)?EncodingMap.FromBalaram(input):input;string rawKey=EncodingMap.Ascii(dictionaryInput).ToLowerInvariant().Replace('\u2011','-').Replace('\u2013','-');string recorded=string.Join("\x1f",new[]{cycles.Get(rawKey),cycles.Get(CompoundForms.Key(dictionaryInput))}.Where(x=>x!=null).Select(x=>x.Split('\0')[0]));if(recorded.Length>0)foreach(string form in recorded.Split('\x1f'))if(CompoundForms.Pattern.IsMatch(form)&&CompoundForms.Separator.Split(form).Length==CompoundForms.Separator.Split(input).Length&&CleanCompoundCycleVariant(mode=="balaram"?EncodingMap.FromBalaram(value):mode=="plain"?ConvertCopied(input,"unicode"):value,form))variants.Add(Target(EncodingMap.Case(input,CompoundForms.PreserveSeparators(input,form)),mode));}return variants.Where(x=>x!=plain).Concat(new[]{plain}).Distinct().ToArray();}
     public bool[] CompoundProtectedMask(string input){if(!CompoundForms.Pattern.IsMatch(input))return null;string stem=input;if(stem.EndsWith("'s",StringComparison.OrdinalIgnoreCase)||stem.EndsWith("’s",StringComparison.OrdinalIgnoreCase))stem=stem.Substring(0,stem.Length-2);string canonical;bool known=KnownCompound(stem,out canonical);string[] parts=known?CompoundForms.Separator.Split(canonical):null;var mask=Enumerable.Repeat(true,input.Length).ToArray();int n=0;foreach(Match part in Words.Matches(stem)){string converted=Word(part.Value,"unicode");bool indic=known?parts[n]!="founder":converted!=part.Value||RecognizedIndic(part.Value,"unicode");if(indic)for(int j=part.Index;j<part.Index+part.Length;j++)mask[j]=false;n++;}return mask;}
     public ItalicSpan[] CompoundFontSpans(string input,string output,string mode){bool[] mask=CompoundProtectedMask(input);if(mask==null)return null;var source=Words.Matches(input).Cast<Match>().ToArray();var target=Words.Matches(output).Cast<Match>().ToArray();if(source.Length!=target.Length)return new ItalicSpan[0];var spans=new List<ItalicSpan>();for(int n=0;n<source.Length;n++)if(mask.Skip(source[n].Index).Take(source[n].Length).Any(x=>!x)){int length=target[n].Length;if(target[n].Value.EndsWith("'s",StringComparison.OrdinalIgnoreCase)||target[n].Value.EndsWith("’s",StringComparison.OrdinalIgnoreCase))length-=2;spans.Add(new ItalicSpan(target[n].Index,length));}return spans.ToArray();}
     public string ContextualGoswami(string word,string context,string mode){string key=IndicStyle.Key(word,"balaram");if(key!="goswami"&&key!="gosvami")return null;context=context??word;var match=Regex.Matches(context,@"[\p{L}\p{M}]+").Cast<Match>().LastOrDefault(m=>m.Index+m.Length==context.Length);if(match==null)return Target(EncodingMap.FromBalaram(word),mode);return Target(EncodingMap.FromBalaram(IndicStyle.GoswamiTitle(context,match)),mode);}
@@ -347,16 +362,16 @@ public sealed partial class Core : IDisposable {
         if(allIndic||contrast||asWord&&RecognizedIndic(compound.Value,mode,true)||ForceStyle(compound.Value,mode)){spans.Add(new ItalicSpan(offset+compound.Index,compound.Length));continue;}
         foreach(Match part in parts)if(!RomanStyle(part.Value,mode)&&(RecognizedIndic(part.Value,mode)||ForceStyle(part.Value,mode)))spans.Add(new ItalicSpan(offset+compound.Index+part.Index,part.Length));
     }}
-    public ItalicSpan[] TriggerItalics(string trigger,string output,string mode){if(!AutomaticItalicMode(mode))return new ItalicSpan[0];var spans=new Dictionary<int,ItalicSpan>();foreach(var span in ItalicWords(output,mode))spans[span.Start]=span;string normalized=Regex.Replace(trigger,@"^(?i:(CC|CB)(Adi|Madhya|Antya))(?=\d)",m=>m.Groups[1].Value.ToUpperInvariant()+(m.Groups[2].Value.Equals("Adi",StringComparison.OrdinalIgnoreCase)?"1":m.Groups[2].Value.Equals("Madhya",StringComparison.OrdinalIgnoreCase)?"2":"3")+".");Match scriptureMatch=ScripturePattern.Match(normalized);if(scriptureMatch.Success){int verseLength;string expected=Scripture(scriptureMatch,out verseLength);if(expected==output){foreach(Match word in Words.Matches(output.Substring(0,verseLength)))spans[word.Index]=new ItalicSpan(word.Index,word.Length,true);}}return spans.Values.OrderBy(x=>x.Start).ToArray();}
+    public ItalicSpan[] TriggerItalics(string trigger,string output,string mode){if(!AutomaticItalicMode(mode))return new ItalicSpan[0];var spans=new Dictionary<int,ItalicSpan>();foreach(var span in ItalicWords(output,mode))spans[span.Start]=span;string normalized=NormalizeScriptureTrigger(trigger);Match scriptureMatch=ScripturePattern.Match(normalized);if(scriptureMatch.Success){ItalicSpan[] verseRanges;string expected=Scripture(scriptureMatch,out verseRanges);if(expected==output){foreach(var verse in verseRanges)foreach(Match word in Words.Matches(output.Substring(verse.Start,verse.Length)))spans[verse.Start+word.Index]=new ItalicSpan(verse.Start+word.Index,word.Length,true);}}return spans.Values.OrderBy(x=>x.Start).ToArray();}
 
-    public static string ReencodeCurrent(string input,string mode){if(mode!="unicode"&&mode!="balaram")return null;string value=EncodingMap.UnambiguousIndic(input)?input:EncodingMap.IsLegacy(input)?EncodingMap.FromBalaram(input):null;return value==null?null:Target(value,mode);} public string ConvertHighlighted(string input,string mode,bool allowNumber=true){if(!allowNumber&&Numbers.Single(input)!=null)return input;string shortValue=CtrlShort(input,mode);if(shortValue!=null)return shortValue;string[] options=CaretChoices(input,mode);if(options.Length==0)return ConvertCopied(input,mode);int index=Array.IndexOf(options,input);return options[index<0?0:(index+1)%options.Length];}
+    public static string ReencodeCurrent(string input,string mode){if(mode!="unicode"&&mode!="balaram")return null;string value=EncodingMap.UnambiguousIndic(input)?input:EncodingMap.IsLegacy(input)?EncodingMap.FromBalaram(input):null;return value==null?null:Target(value,mode);} public string ConvertHighlighted(string input,string mode,bool allowNumber=true){if(!allowNumber&&Numbers.Single(input)!=null)return input;string shortValue=CtrlExpansion(input,mode);if(shortValue!=null)return shortValue;string[] options=CaretChoices(input,mode);if(options.Length==0)return ConvertCopied(input,mode);int index=Array.IndexOf(options,input);return options[index<0?0:(index+1)%options.Length];}
     public bool RememberCaretSpelling(string input,string output,string mode,bool repeat,string occurrence=null){string[] options=CaretChoices(input,mode);if(output==input||!options.Contains(output)){if(output==EncodingMap.Ascii(output))CancelSpellingChoice();return false;}if(!repeat&&(input==EncodingMap.Ascii(input)||!options.Contains(input)))return false;return RememberSpelling(input,output,mode,mode=="balaram"?"balaram":"auto",occurrence);}
     string ConvertSegment(string text,string mode){bool singleWord=SingleProseWord(text);return Compounds.Replace(text,x=>{if(KeepWord(x.Value))return x.Value;string compound;if(TryCompound(x.Value,mode,out compound))return compound;return personal.ContainsKey(x.Value)?Word(x.Value,mode):English(x.Value)&&!IndicLoanwords.Contains(x.Value)?x.Value:Words.Replace(x.Value,w=>ProseWord(w.Value,mode,singleWord));});}
     public string TriggerWithObservedCase(string typed,string observed){if(!EditGuard.CaseEquivalent(typed,observed))return null;string original=Trigger(typed);if(original==null||IsDirectTrigger(typed))return original;return Trigger(observed)??original;}
     public string Trigger(string trigger) {
         if(trigger==null||CtrlOnlyShort(trigger))return null;string configured;if(snippets.TryGetValue(trigger,out configured))return exactShortKeys.Contains(trigger)?Configuration.Expand(configured,DateTime.Now):RomanNameExceptions(Configuration.Expand(configured,DateTime.Now));
         string value; if(Short.TryGetValue(trigger,out value))return RomanNameExceptions(value);
-        string normalized=Regex.Replace(trigger,@"^(?i:(CC|CB)(Adi|Madhya|Antya))(?=\d)",x=>x.Groups[1].Value.ToUpperInvariant()+(x.Groups[2].Value.Equals("Adi",StringComparison.OrdinalIgnoreCase)?"1":x.Groups[2].Value.Equals("Madhya",StringComparison.OrdinalIgnoreCase)?"2":"3")+".");
+        string normalized=NormalizeScriptureTrigger(trigger);
         Match m=ScripturePattern.Match(normalized); if(m.Success)return Scripture(m);
         if(trigger.Length<2 || (trigger[trigger.Length-1]!='>'&&trigger[trigger.Length-1]!='<'&&trigger[trigger.Length-1]!='?'))return null;
         string word=trigger.Substring(0,trigger.Length-1);if(KeepWord(word))return null;
@@ -370,23 +385,53 @@ public sealed partial class Core : IDisposable {
         if(Find(stem)==null&&Find(canonical)==null&&Find(EncodingMap.Ascii(stem).ToLowerInvariant())==null&&!personal.ContainsKey(word)&&!personal.ContainsKey(stem))return null;
         return Word(word,mode);
     }
-    string Scripture(Match m){int length;return Scripture(m,out length);}
-    string Scripture(Match m,out int verseLength) {
-        verseLength=0;
-        string book=m.Groups[1].Value.ToUpperInvariant(),reference=m.Groups[2].Value.ToUpperInvariant(),kind=m.Groups[3].Value.ToUpperInvariant(),suffix=m.Groups[5].Value=="?"?":":m.Groups[5].Value;
-        if(kind=="")kind="V";
-        string key=book+reference;
-        if(book=="CB"&&reference.Contains(".")){int dot=reference.IndexOf('.');string part=reference.Substring(0,dot);if(part=="1"||part=="2"||part=="3")key="CB"+(part=="1"?"Adi":part=="2"?"Madhya":"Antya")+reference.Substring(dot+1);}
-        string verse=kind.Contains("V")?ScriptureRecord(key,suffix):null;
-        string translation=kind.Contains("T")?ScriptureRecord(key,"T"+suffix):null;
-        if((kind.Contains("V")&&verse==null)||(kind.Contains("T")&&translation==null))return null;
-        if(verse!=null){ string[] lines=verse.Replace("\r\n","\n").Split('\n');string first=lines[0];if(first.EndsWith("uvāca")||first.EndsWith("uvaca")||first.EndsWith("uväca"))verse=string.Join("\n",lines.Skip(1)); }
-        verseLength=verse==null?0:verse.Length;
-        string output=verse==null?translation:translation==null?verse:verse+"\n\n"+translation;
-        if(m.Groups[4].Success){string title=book=="BG"?"Bhagavad-gītā":book=="SB"?"Śrīmad-Bhāgavatam":book=="CC"?"Śrī Caitanya-caritāmṛta":book=="CB"?"Śrī Caitanya-bhāgavata":book=="ISO"?"Śrī Īśopaniṣad":book=="BS"?"Brahma-saṁhitā":"Nectar of Instruction";output+="\n\n"+Target(title,suffix=="<"?"balaram":suffix==":"?"plain":"unicode")+" "+reference;}
-        return RomanNameExceptions(output.Replace("Bhagavad-Gītā","Bhagavad-gītā"));
+    string Scripture(Match m){ItalicSpan[] spans;return Scripture(m,out spans);}
+    string ScriptureKey(string book,string reference){
+        if(book=="CB"&&reference.Contains(".")){int dot=reference.IndexOf('.');string part=reference.Substring(0,dot);if(part=="1"||part=="2"||part=="3")return "CB"+(part=="1"?"Adi":part=="2"?"Madhya":"Antya")+reference.Substring(dot+1);}
+        return book+reference;
+    }
+    static string ScriptureVerse(string verse){
+        if(verse==null)return null;string[] lines=verse.Replace("\r\n","\n").Split('\n');string first=lines[0];
+        return first.EndsWith("uvāca")||first.EndsWith("uvaca")||first.EndsWith("uväca")?string.Join("\n",lines.Skip(1)):verse;
+    }
+    static bool AppendScripture(StringBuilder output,string text,List<ItalicSpan> verses,bool verse){
+        if(text==null)return true;if(text.Length==0)return false;text=RomanNameExceptions(text.Replace("Bhagavad-Gītā","Bhagavad-gītā"));
+        if((long)output.Length+text.Length+(output.Length>0?2:0)>200000)return false;if(output.Length>0)output.Append("\n\n");int start=output.Length;output.Append(text);if(verse)verses.Add(new ItalicSpan(start,text.Length,true));return true;
+    }
+    string Scripture(Match m,out ItalicSpan[] verseSpans){
+        verseSpans=new ItalicSpan[0];string book=m.Groups[1].Value.ToUpperInvariant(),reference=m.Groups[2].Value.ToUpperInvariant(),kind=m.Groups[3].Value.ToUpperInvariant(),suffix=m.Groups[5].Value=="?"?":":m.Groups[5].Value;
+        if(kind=="")kind="V";var references=new List<string>();
+        if(reference.IndexOfAny(new[]{'-','\u2011','\u2013'})>=0){string prefix;int first,last;if(!TryScriptureRange(reference,out prefix,out first,out last))return null;for(int n=first;;n++){references.Add(prefix+n.ToString(CultureInfo.InvariantCulture));if(n==last)break;}}
+        else references.Add(reference);
+        // Resolve every required record before returning any text. A missing
+        // verse or translation leaves the complete range trigger unchanged.
+        var parts=new List<KeyValuePair<string,string>>();foreach(string item in references){string key=ScriptureKey(book,item),verse=kind.Contains("V")?ScriptureVerse(ScriptureRecord(key,suffix)):null,translation=kind.Contains("T")?ScriptureRecord(key,"T"+suffix):null;
+            if(kind.Contains("V")&&string.IsNullOrEmpty(verse)||kind.Contains("T")&&string.IsNullOrEmpty(translation))return null;parts.Add(new KeyValuePair<string,string>(verse,translation));}
+        var output=new StringBuilder();var spans=new List<ItalicSpan>();int at=0;
+        while(at<parts.Count){int end=at+1;string translation=parts[at].Value;
+            // Books sometimes share one translation across consecutive verses.
+            // Keep that verse group together and insert its translation once.
+            if(translation!=null)while(end<parts.Count&&parts[end].Value==translation)end++;
+            for(int n=at;n<end;n++)if(!AppendScripture(output,parts[n].Key,spans,true))return null;
+            if(!AppendScripture(output,translation,spans,false))return null;at=end;
+        }
+        if(m.Groups[4].Success){string title=book=="BG"?"Bhagavad-gītā":book=="SB"?"Śrīmad-Bhāgavatam":book=="CC"?"Śrī Caitanya-caritāmṛta":book=="CB"?"Śrī Caitanya-bhāgavata":book=="ISO"?"Śrī Īśopaniṣad":book=="BS"?"Brahma-saṁhitā":"Nectar of Instruction";if(!AppendScripture(output,Target(title,suffix=="<"?"balaram":suffix==":"?"plain":"unicode")+" "+reference,spans,false))return null;}
+        verseSpans=spans.ToArray();return output.ToString();
     }
     string ScriptureRecord(string key,string suffix){string value=scripture.Get(key+suffix);if(value!=null||!key.StartsWith("CB"))return value;int dot=key.LastIndexOf('.');if(dot<0)return null;string number=key.Substring(dot+1).TrimStart('0');if(number=="")number="0";for(int width=1;width<=4;width++){value=scripture.Get(key.Substring(0,dot+1)+number.PadLeft(width,'0')+suffix);if(value!=null)return value;}return null;}
+    static string CycleFormKey(string word){return word.Normalize(NormalizationForm.FormC).ToLowerInvariant().Replace('ṃ','ṁ');}
+    static HashSet<string> ValidatedCycleForms(string canonical,string morphology){
+        if(string.IsNullOrEmpty(canonical)||string.IsNullOrEmpty(morphology))return null;
+        var forms=new HashSet<string>(morphology.Split('\x1f').Select(CycleFormKey),StringComparer.Ordinal);
+        // Prune recovered partial spellings only when the grammatical source
+        // confirms the book spelling too. Uncovered Bengali/book forms remain
+        // available rather than being rejected by Sanskrit-only assumptions.
+        return forms.Contains(CycleFormKey(canonical))?forms:null;
+    }
+    bool CleanCompoundCycleVariant(string canonical,string candidate){
+        var source=Words.Matches(canonical).Cast<Match>().ToArray();var target=Words.Matches(candidate).Cast<Match>().ToArray();if(source.Length!=target.Length)return false;
+        for(int n=0;n<source.Length;n++){string key=EncodingMap.Ascii(source[n].Value).ToLowerInvariant();var forms=ValidatedCycleForms(source[n].Value,MorphologyForms(key));if(forms!=null&&!forms.Contains(CycleFormKey(target[n].Value)))return false;}return true;
+    }
     public string[] Cycle(string word,char suffix) {
         if(KeepWord(word))return new string[0];if(CompoundForms.Pattern.IsMatch(word))return CompoundChoices(word,suffix=='<'?"balaram":suffix=='?'?"plain":"unicode");
         string custom;if(personal.TryGetValue(word,out custom)){string customMode=suffix=='<'?"balaram":suffix=='?'?"plain":"unicode";return new[]{Target(EncodingMap.Case(word,custom),customMode),EncodingMap.Ascii(word)}.Distinct().ToArray();}
@@ -400,10 +445,14 @@ public sealed partial class Core : IDisposable {
         string data=cycles.Get(key)??cycles.Get(word)??cycles.Get(EncodingMap.Ascii(preferred).ToLowerInvariant());
         if(data==null){string singular=PluralStem(key);if(singular==null){string canonicalWord=Find(key);if(canonicalWord==null)return new string[0];data=canonicalWord;}else{string singularData=cycles.Get(singular);string canonical=ExactWord(singular);data=singularData==null?canonical+"s":string.Join("\x1f",singularData.Split('\0')[0].Split('\x1f').Select(x=>x+"s"));}}
         // The conversion table carries the corpus-frequency winner. Keep recovered alternatives after it.
-        string[] values=data.Split('\0')[0].Split('\x1f');string morphology=MorphologyForms(key)??MorphologyForms(EncodingMap.Ascii(preferred).ToLowerInvariant());if(morphology!=null)values=values.Concat(morphology.Split('\x1f')).Distinct().ToArray();
+        string[] values=data.Split('\0')[0].Split('\x1f');string morphology=MorphologyForms(key)??MorphologyForms(EncodingMap.Ascii(preferred).ToLowerInvariant());
+        string singularStem=null;if(morphology==null){singularStem=PluralStem(key);string singularForms=singularStem==null?null:MorphologyForms(singularStem);if(singularForms!=null)morphology=string.Join("\x1f",singularForms.Split('\x1f').Select(x=>x+"s"));}
+        if(morphology!=null)values=values.Concat(morphology.Split('\x1f')).Distinct().ToArray();
+        string verifiedSpelling=BookWord(key)??BookWord(EncodingMap.Ascii(preferred).ToLowerInvariant())??(singularStem==null?preferred:ExactWord(singularStem)+"s");var validated=ValidatedCycleForms(verifiedSpelling,morphology);
+        if(validated!=null){values=values.Where(x=>validated.Contains(CycleFormKey(x))).ToArray();if(!validated.Contains(CycleFormKey(preferred)))preferred=EncodingMap.Case(word,verifiedSpelling);}
         string mode=suffix=='<'?"balaram":suffix=='?'?"plain":"unicode";
         string plain=EncodingMap.Ascii(EncodingMap.IsLegacy(word)&&!KnownUnicode(word)?EncodingMap.FromBalaram(word):word)+possessive;
-        return new[]{preferred}.Concat(values.Select(x=>EncodingMap.Case(word,x))).Select(x=>Target(x,mode)+possessive).Where(x=>x!=plain).Concat(new[]{plain}).Distinct().ToArray();
+        return new[]{preferred}.Concat(values.Select(x=>EncodingMap.Case(word,x))).Distinct(StringComparer.OrdinalIgnoreCase).Select(x=>Target(x,mode)+possessive).Where(x=>x!=plain).Concat(new[]{plain}).Distinct().ToArray();
     }
     void DisposeStores(){
         if(verseNormalization!=null&&verseNormalization.IsValueCreated&&verseNormalization.Value!=null)verseNormalization.Value.Dispose();
@@ -446,6 +495,7 @@ public sealed class EllipsisTyping {
 }
 public sealed class InputState {
     readonly EllipsisTyping ellipsis=new EllipsisTyping();
+    static readonly Regex ScriptureBeforeDot=new Regex(@"^(?i:BG|SB|CC|CB|ISO|BS|NOI)(?i:Adi|Madhya|Antya)?(?:\d+(?:\.\d+){0,1}|\d+(?:\.\d+){0,2}[-\u2011\u2013]\d+(?:\.\d+){0,1})$",RegexOptions.Compiled);
     public string Token=""; public long Generation; public bool Paused; bool overflow;string whitespaceToken="";bool whitespaceOverflow;
     public string UndoOriginal,UndoOutput; public IntPtr Owner; public DateTime CycleDeadline;public string[] Candidates;public int CycleIndex;public int PendingCycles;public string CycleMode="unicode";
     public void Clear(){Token="";overflow=false;whitespaceToken="";whitespaceOverflow=false;ellipsis.Clear();Generation++;UndoOriginal=null;UndoOutput=null;Candidates=null;PendingCycles=0;}
@@ -476,7 +526,7 @@ public sealed class InputState {
         if(char.IsWhiteSpace(c)){whitespaceToken="";whitespaceOverflow=false;}else if(!whitespaceOverflow&&whitespaceToken.Length<160)whitespaceToken+=c;else whitespaceOverflow=true;
         if(c=='>'||c=='<'||c=='?'||c=='#'||c==':'){string candidate=overflow?null:Token+c;Token="";overflow=false;UndoOriginal=null;UndoOutput=null;Candidates=null;return candidate;}
         UndoOriginal=null;UndoOutput=null;Candidates=null;
-        if(c=='.'&&!Regex.IsMatch(Token,@"^(?i:BG|SB|CC|CB|ISO|BS|NOI)(?i:Adi|Madhya|Antya)?\d+(?:\.\d+){0,1}$")){Token="";overflow=false;return null;}
+        if(c=='.'&&!ScriptureBeforeDot.IsMatch(Token)){Token="";overflow=false;return null;}
         if(char.IsLetterOrDigit(c)||CharUnicodeInfo.GetUnicodeCategory(c)==UnicodeCategory.NonSpacingMark||CharUnicodeInfo.GetUnicodeCategory(c)==UnicodeCategory.SpacingCombiningMark||CharUnicodeInfo.GetUnicodeCategory(c)==UnicodeCategory.EnclosingMark||c=='-'||c=='\u2011'||c=='\u2013'||c=='.'||c=='\''||c=='’') { if(!overflow&&Token.Length<160)Token+=c;else overflow=true; }
         else {Token="";overflow=false;}
         return null;

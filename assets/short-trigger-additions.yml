@@ -9,3 +9,15 @@ matches:
     replace: 'Särvabhauma Bhaööäcärya'
   - trigger: 'SBB?'
     replace: 'Sarvabhauma Bhattacarya'
+  - trigger: 'SSR'
+    replace: 'The Science of Self-Realization'
+    keep_exact: true
+  - trigger: 'SSR>'
+    replace: 'The Science of Self-Realization'
+    keep_exact: true
+  - trigger: 'SSR<'
+    replace: 'The Science of Self-Realization'
+    keep_exact: true
+  - trigger: 'SSR?'
+    replace: 'The Science of Self-Realization'
+    keep_exact: true

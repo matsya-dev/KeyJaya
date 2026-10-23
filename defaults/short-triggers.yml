@@ -29,11 +29,11 @@ matches:
   - trigger: ":shell"
     replace: "Hello from your shell"
   - trigger: "ACBSP:"
-    replace: "A. C. Bhaktivedanta Swami Prabhupada"
+    replace: "A.C. Bhaktivedanta Swami Prabhupada"
   - trigger: "ACBSP\u003c"
-    replace: "A. C. Bhaktivedanta Swami Prabhupäda"
+    replace: "A.C. Bhaktivedanta Swami Prabhupäda"
   - trigger: "ACBSP\u003e"
-    replace: "A. C. Bhaktivedanta Swami Prabhupāda"
+    replace: "A.C. Bhaktivedanta Swami Prabhupāda"
   - trigger: "AGTSP:"
     replace: "All glories to Srila Prabhupada"
   - trigger: "AGTSP\u003c"
@@ -1176,3 +1176,15 @@ matches:
     replace: "Särvabhauma Bhaööäcärya"
   - trigger: "SBB?"
     replace: "Sarvabhauma Bhattacarya"
+  - trigger: "SSR"
+    replace: "The Science of Self-Realization"
+    keep_exact: true
+  - trigger: "SSR>"
+    replace: "The Science of Self-Realization"
+    keep_exact: true
+  - trigger: "SSR<"
+    replace: "The Science of Self-Realization"
+    keep_exact: true
+  - trigger: "SSR?"
+    replace: "The Science of Self-Realization"
+    keep_exact: true

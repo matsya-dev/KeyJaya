@@ -17,7 +17,7 @@ Run one or several suites:
 .\test.ps1 -Suite ItransTests,HindiTests,TriggerEditorTests
 ```
 
-Run all 42 included noninteractive suites:
+Run all 44 included noninteractive suites:
 
 ```powershell
 .\test.ps1 -Full
@@ -33,6 +33,20 @@ These tests do not type into apps, read open documents, replace the clipboard,
 register global shortcuts or start the resident. Native-key tests construct and
 inspect event structures; they do not send those events. Interactive browser,
 Word, InDesign, clipboard and live automation probes from development are excluded.
+
+`CtrlShortTests` covers Ctrl scripture targeting, verse-only defaults, range
+modifiers, paired translations, and abbreviation priority. `ScriptureRangeTests`
+checks every adjacent pair in the bundled books in all three Roman encodings,
+samples verse/prose italic boundaries, exercises continuous cycle undo origins,
+and uses synthetic data for missing records and exact size limits. These check
+conversion logic and formatting output; actual editor Ctrl+Z and Backspace
+behavior still require the physical checks below.
+
+The scripture suite also checks every record identifier against its stored index
+hash, rejects duplicate identifiers, and verifies index order and record bounds.
+The 276 repaired identifiers in `tests/fixtures/scripture-identifiers.tsv` must
+resolve through both indexed lookup and Ctrl expansion, with SHA-256 hashes
+matching their unchanged original verse/translation payloads.
 
 ## Physical release checks
 
@@ -50,6 +64,12 @@ Use separate disposable documents and a scratch browser editor. Check:
 7. Pause/startup options and ordinary Ctrl shortcuts.
 8. InDesign text frames and Text/GREP Find/Change fields; Obsidian Live Preview;
    Excel cell editing; Acrobat comments; browser/ChatGPT/WhatsApp scratch inputs.
+9. `BG2.13–14` + Left Ctrl inserts verses only; `BG2.13–14VT` pairs each verse
+   with its translation. Both verses are italic; translations follow prose rules.
+   Ctrl+Z should restore the full reference and original formatting in one step.
+   Repeat with Track Changes and each encoding. Missing ranges must stay unchanged.
+10. Cycle `Krishna` and `Rama` through multiple complete loops, then Backspace:
+    restore the original spelling and formatting, preserving neighboring text.
 
 Never use an existing working manuscript as a disposable fixture. Sleep/wake and
 Windows sign-in tests are separate from the noninteractive suite.
@@ -60,7 +80,7 @@ The **Windows checks** GitHub Actions workflow runs on pushes to `main`, pull
 requests, or a manual dispatch. Both PowerShell 7 and Windows PowerShell 5.1 jobs
 use fresh Windows Server 2022 runners. Each audits the source and documentation,
 checks bundled dictionary hashes, builds a verification installer, runs the
-compiled-app probe and all 42 suites, then checks package integrity and isolated
+compiled-app probe and all included suites, then checks package integrity and isolated
 installation/upgrade behavior.
 
 Only verification logs/results are retained, for seven days. CI does not publish

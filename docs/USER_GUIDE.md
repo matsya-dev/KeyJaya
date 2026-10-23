@@ -68,6 +68,10 @@ available spellings and the original plain spelling continuously. For example:
 
 `Rama` → `Rāma` → `Ramā` → `Rāmā` → `Rama` → `Rāma`
 
+Known incomplete spellings are filtered out of cycles when dictionary and
+grammatical references confirm the alternatives. Valid spellings and the original
+plain form remain available; uncovered Bengali/book forms are retained.
+
 Configured short abbreviations take priority over ordinary word conversion.
 Recognized plurals are supported too, such as `acaryas` → `ācāryas`.
 
@@ -122,7 +126,7 @@ contraction corrections retain normal Backspace behavior.
 | Action | Default key | Example output |
 | --- | --- | --- |
 | Single letter | Backtick | `a` → `ā` |
-| Word, selection, abbreviation, or single number | Left Ctrl tap | `Krishna` → `Kṛṣṇa` |
+| Word, selection, abbreviation, verse reference, or single number | Left Ctrl tap | `Krishna` → `Kṛṣṇa`; `BG18.66` inserts a verse |
 | Unicode / IAST | `Ctrl+.` | `kṛṣṇa` |
 | Balarama / legacy | `Ctrl+,` | `kåñëa` |
 | Plain Roman text | `Ctrl+/` | `krsna` |
@@ -258,19 +262,45 @@ automatically; updates preserve your custom triggers.
 
 ### Insert a verse or translation
 
-Type the reference and its ending. For Bhagavad-gītā 18.66:
+Type a reference and tap **Left Ctrl** to insert it using the selected encoding.
+You can also place the caret inside an existing reference or select just the
+reference before tapping Ctrl. For Bhagavad-gītā 18.66:
 
-| Trigger | Inserts |
+| Reference + Left Ctrl | Inserts |
 | --- | --- |
-| `BG18.66>` | Verse |
-| `BG18.66T>` | Translation |
-| `BG18.66VT>` | Verse and translation |
-| `BG18.66VTR>` | Verse, translation, and reference |
+| `BG18.66` | Verse |
+| `BG18.66T` | Translation |
+| `BG18.66VT` | Verse and translation |
+| `BG18.66VTR` | Verse, translation, and reference |
 
-Use `<` for Balarama or `?` for plain Roman output. The final symbol activates the
-insertion; a reference without it does not insert the passage. The cheat sheet
-lists the supported scripture formats. Insertions use the document's formatting;
+With no `V`, `T`, or `R` modifier, a reference always inserts **verse only**.
+`R` by itself adds the reference to the verse; `TR` adds it to the translation.
+
+Ctrl uses **Encoding: Auto (detect font)** or your explicit encoding override.
+The complete reference is replaced; surrounding text and punctuation are kept.
+Typing a reference alone leaves it unchanged until you activate it.
+
+The symbol endings remain available: `BG18.66>` inserts Unicode, `BG18.66<`
+inserts Balarama, and `BG18.66?` inserts plain Roman text. The cheat sheet lists
+the supported scripture formats. Insertions use the document's formatting;
 automatic italics follow the rules below.
+
+### Insert a verse range
+
+Use a hyphen or en dash between verse numbers, without spaces:
+
+- `BG2.13–14` + Left Ctrl inserts both verses.
+- `BG2.13–14VT` + Left Ctrl inserts verse 13 with its translation, then verse 14
+  with its translation.
+- `BG2.13–14VTR` adds one reference for the complete range at the end.
+- `SB1.2.6-7>` inserts verses 6–7 in Unicode; `<` and `?` choose the other
+  encodings as usual.
+
+A full endpoint such as `BG2.13-2.14` also works. Ranges must stay within one
+chapter and contain no more than 200 verses. If a required verse or translation
+is missing, the complete reference stays unchanged. When consecutive verses share
+one translation in the source, those verses are grouped and the translation is
+inserted once. Each verse receives verse italics; translations retain prose styling.
 
 ## Automatic corrections and italics
 
@@ -325,7 +355,7 @@ These editing areas have been exercised during development:
 | Adobe InDesign | Text frames, footnotes/endnotes, Text/GREP Find/Change fields; GREP codes are preserved |
 | Zen/browser editors, ChatGPT, WhatsApp | Editable plain-text and rich-text fields |
 | Obsidian | Writable Markdown, including Live Preview |
-| Microsoft Excel | Cells in edit mode with a visible text caret; enter edit mode before converting |
+| Microsoft Excel | Cells in edit mode with a visible text caret; keep **View → Formula Bar** enabled |
 | Adobe Acrobat | Sticky-note comments, replies, and text-box comments |
 
 App versions and controls can behave differently; custom, protected, or elevated

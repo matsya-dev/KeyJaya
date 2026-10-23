@@ -20,6 +20,12 @@ check(license_text.startswith('MIT License\n'), 'Original code license retained'
 check('Copyright (c) 2026 matsya-dev' in license_text, 'Original copyright notice retained')
 check(version == re.search(r'Current\s*=\s*"([^"]+)"', (root/'src/Core.cs').read_text(encoding='utf-8-sig')).group(1), 'Version matches source')
 baseline = json.loads((root/'docs/SOURCE_BASELINE.json').read_text(encoding='utf-8-sig'))
+check(baseline['version'] == version, 'Accepted source baseline version')
+assembly = (root/'src/AssemblyInfo.cs').read_text(encoding='utf-8-sig')
+for attribute in ('AssemblyVersion', 'AssemblyFileVersion'):
+    check(f'{attribute}("{version}.0")' in assembly, 'Assembly version: '+attribute)
+for name in ('app.manifest', 'runtime.manifest'):
+    check(f'assemblyIdentity version="{version}.0"' in (root/'src'/name).read_text(encoding='utf-8-sig'), 'Manifest version: '+name)
 for name, expected in baseline['production_source_normalized_sha256'].items():
     check(text_sha(root/name) == expected, 'Production source baseline: '+name)
 manifest = json.loads((root/'data/manifest.json').read_text(encoding='utf-8-sig'))
@@ -61,5 +67,5 @@ for path in root.rglob('*'):
 check((root/'data/sanskrit-morphology-LGPLLR.pdf').exists(), 'Sanskrit license retained')
 check((root/'data/hindi-COPYING').exists(), 'Hindi license retained')
 check((root/'data/english-dictionary-notices.txt').exists(), 'English notices retained')
-check(len(json.loads((root/'tests/suites.json').read_text(encoding='utf-8-sig'))) == 42, 'Isolated test registry complete')
+check(len(json.loads((root/'tests/suites.json').read_text(encoding='utf-8-sig'))) == 44, 'Isolated test registry complete')
 print(f'PASS {checks} repository checks; source/data intact; generated outputs, personal paths and email expansions excluded.')

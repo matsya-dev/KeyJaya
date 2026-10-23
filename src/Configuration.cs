@@ -42,11 +42,35 @@ public sealed class ScriptSettings {
  public void Set(bool precise,bool preserve){SettingsFile.Update(path,"script_precise="+precise.ToString().ToLowerInvariant(),"preserve_verse_markers="+preserve.ToString().ToLowerInvariant());Precise=precise;PreserveVerseMarkers=preserve;}
 }
 public static class Configuration {
+ public static bool UpdateAcbspInitials(string root){
+  string path=Short(root);if(!File.Exists(path))return false;var exact=new HashSet<string>(StringComparer.Ordinal);var current=Read(path,false,true,exact);
+  var previous=new HashSet<string>(new[]{"A. C. Bhaktivedanta Swami Prabhupāda","A. C. Bhaktivedanta Swami Prabhupäda","A. C. Bhaktivedanta Swami Prabhupada"},StringComparer.Ordinal);
+  byte[] original=File.ReadAllBytes(path);string text=File.ReadAllText(path,Encoding.UTF8);var blocks=Regex.Matches(text,@"(?m)^[ \t]*-\s+trigger:\s*([^\r\n]+)");var output=new StringBuilder();int at=0;bool changed=false;
+  for(int n=0;n<blocks.Count;n++){var block=blocks[n];int end=n+1<blocks.Count?blocks[n+1].Index:text.Length;output.Append(text.Substring(at,block.Index-at));string raw=text.Substring(block.Index,end-block.Index),key=PlainTriggerKey(Decode(block.Groups[1].Value)),value;
+   if((key=="ACBSP"||key=="ACBSP>"||key=="ACBSP<"||key=="ACBSP?")&&!exact.Contains(key)&&current.TryGetValue(key,out value)&&previous.Contains(value)){
+    string revised=Regex.Replace(raw,@"(?m)^([ \t]+replace:[ \t]*)([^\r\n]*)",m=>{string scalar=m.Groups[2].Value;int offset=scalar.IndexOf("A. C. Bhaktivedanta Swami Prabhup",StringComparison.Ordinal);return m.Groups[1].Value+(offset<0?scalar:scalar.Remove(offset+2,1));});changed|=revised!=raw;raw=revised;
+   }output.Append(raw);at=end;
+  }output.Append(text.Substring(at));if(!changed)return false;
+  string temporary=path+".tmp-"+Guid.NewGuid().ToString("N"),backup=Path.Combine(root,"backups","acbsp-initials-previous.yml");bool bom=original.Length>=3&&original[0]==239&&original[1]==187&&original[2]==191;
+  try{File.WriteAllText(temporary,output.ToString(),new UTF8Encoding(bom));Read(temporary,false,true);if(!File.ReadAllBytes(path).SequenceEqual(original))throw new IOException("Trigger configuration changed during upgrade.");Directory.CreateDirectory(Path.GetDirectoryName(backup));if(!File.Exists(backup))File.WriteAllBytes(backup,original);SettingsFile.Commit(temporary,path);}finally{if(File.Exists(temporary))File.Delete(temporary);}return true;
+ }
  public static bool AddRequestedShortTriggers(string root){
-  string additions=Path.Combine(root,"assets","short-trigger-additions.yml"),marker=Path.Combine(root,"state","sbb-trigger-added.flag");if(!File.Exists(additions)||File.Exists(marker))return false;
-  string path=Short(root);var current=Read(path,false,true);var requested=Read(additions);var text=new StringBuilder(File.ReadAllText(path,Encoding.UTF8));bool changed=false;var json=new JavaScriptSerializer();foreach(var row in requested){if(current.ContainsKey(row.Key))continue;if(!changed)text.Append('\n');text.Append("  - trigger: "+json.Serialize(row.Key)+"\n    replace: "+json.Serialize(row.Value)+"\n");current.Add(row.Key,row.Value);changed=true;}
-  if(changed){string temporary=path+".tmp-"+Guid.NewGuid().ToString("N");try{File.WriteAllText(temporary,text.ToString(),new UTF8Encoding(false));Read(temporary);SettingsFile.Commit(temporary,path);}finally{if(File.Exists(temporary))File.Delete(temporary);}}
-  Directory.CreateDirectory(Path.GetDirectoryName(marker));File.WriteAllText(marker,"Explicit SBB addition applied; subsequent deletions stay respected.\n");return changed;
+  bool updated=UpdateAcbspInitials(root);string additions=Path.Combine(root,"assets","short-trigger-additions.yml");if(!File.Exists(additions))return updated;
+  var exact=new HashSet<string>(StringComparer.Ordinal);var requested=Read(additions,false,false,exact);
+  foreach(string name in new[]{"SBB","SSR"})updated=AddRequestedShortGroup(root,name,requested,exact)||updated;return updated;
+ }
+ static bool ShortGroupKey(string key,string name){return key==name||key==name+">"||key==name+"<"||key==name+"?";}
+ static bool AddRequestedShortGroup(string root,string name,Dictionary<string,string> requested,HashSet<string> exact){
+  string marker=Path.Combine(root,"state",name.ToLowerInvariant()+"-trigger-added.flag");if(File.Exists(marker))return false;
+  var rows=requested.Where(row=>ShortGroupKey(row.Key,name)).ToArray();if(rows.Length==0)return false;
+  string path=Short(root);var current=Read(path,false,true);bool changed=!current.Keys.Any(key=>ShortGroupKey(key,name));
+  // An existing or disabled abbreviation is the user's configuration. Do not
+  // introduce missing forms that could override its custom Ctrl replacement.
+  if(changed){byte[] original=File.ReadAllBytes(path);bool bom=original.Length>=3&&original[0]==239&&original[1]==187&&original[2]==191;string raw=File.ReadAllText(path,Encoding.UTF8),newline=raw.Contains("\r\n")?"\r\n":"\n";var text=new StringBuilder(Regex.Replace(raw,@"(?m)^([ \t]*matches:)[ \t]*\[\]([ \t]*\r?)$","$1$2"));var json=new JavaScriptSerializer();text.Append(newline);
+   foreach(var row in rows){text.Append("  - trigger: "+json.Serialize(row.Key)+newline+"    replace: "+json.Serialize(row.Value)+newline);if(exact.Contains(row.Key))text.Append("    keep_exact: true"+newline);}
+   string temporary=path+".tmp-"+Guid.NewGuid().ToString("N");try{File.WriteAllText(temporary,text.ToString(),new UTF8Encoding(bom));Read(temporary,false,true);if(!File.ReadAllBytes(path).SequenceEqual(original))throw new IOException("Trigger configuration changed during upgrade.");SettingsFile.Commit(temporary,path);}finally{if(File.Exists(temporary))File.Delete(temporary);}
+  }
+  Directory.CreateDirectory(Path.GetDirectoryName(marker));File.WriteAllText(marker,"Explicit "+name+" addition applied; subsequent deletions stay respected.\n");return changed;
  }
  public const string PersonalFile="personal-triggers.yml";public const string ShortFile="short-triggers.yml";
  public static string Folder(string root){return Path.Combine(root,"config");}

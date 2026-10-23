@@ -20,6 +20,7 @@
   "SingleLetterTests",
   "MixedWordFontTests",
   "CtrlShortTests",
+  "ScriptureRangeTests",
   "ShortcutSettingsTests",
   "NameExceptionTests",
   "OccurrencePreferenceTests",
@@ -40,5 +41,6 @@
   "ReplayTests",
   "ResidentReplacementTests",
   "NativeKeyTests",
+  "ExcelCellTests",
   "StartupSettingsTests"
 ]

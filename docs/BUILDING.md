@@ -42,7 +42,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 | `out/app/engine/keyjaya-app.exe.config` | Required Framework/DPI configuration |
 | `out/app/KeyJaya-Uninstall.exe` | Uninstaller |
 | `out/payload.zip` | Installer input |
-| `out/KeyJaya-Setup-v1.9.4.exe` | Installable package |
+| `out/KeyJaya-Setup-v1.9.5.exe` | Installable package |
 
 The build copies checked-in data, defaults, and licensing notices, compiles the
 app and uninstaller, then packages the installer. It never launches the resident, installs anything,
@@ -71,10 +71,7 @@ are not promised to have identical byte hashes.
 
 Update `VERSION`, `Version.Current` in `src/Core.cs`, the assembly/file versions in
 `src/AssemblyInfo.cs`, and both manifest identities together. Test before releasing.
-The current sources preserve the accepted 1.9.4 runtime logic; build scripts and
-repository defaults were organized separately.
-
-`docs/SOURCE_BASELINE.json` records the initial 1.9.4 source hashes. The audit
+`docs/SOURCE_BASELINE.json` records the accepted release's source hashes. The audit
 deliberately detects drift from that baseline. After an intentional reviewed
 source/data update, refresh the corresponding baseline/manifest and version;
 do not bypass a mismatch without understanding the changed files.

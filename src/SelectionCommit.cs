@@ -28,6 +28,19 @@ public sealed class CorrectionTyping {
     public bool Read(long stamp,IntPtr window,long current,out string suffix){suffix=null;if(!active||origin!=stamp||owner!=window||last!=current)return false;suffix=tail;return true;}
 }
 public static class SelectionConversion {
+    // Browser providers expose paragraph breaks differently from clipboard
+    // text. This proves pasted content without changing the document or
+    // forgiving missing/reordered words, spaces, punctuation, or diacritics.
+    public static bool PastedTextMatches(string expected,string observed){
+        if(string.IsNullOrEmpty(expected)||observed==null||expected.Length>200000||observed.Length>400000)return false;
+        Func<string,string> paragraphs=value=>System.Text.RegularExpressions.Regex.Replace(value.Replace("\r\n","\n").Replace('\r','\n').Replace('\u2028','\n').Replace('\u2029','\n'),"\n+","\n");
+        return paragraphs(expected)==paragraphs(observed);
+    }
+    public static bool PastedCaretMatches(string expected,string before,string after){
+        if(before==null||after==null||after.Length>32||after.Trim('\r','\n','\u2028','\u2029').Length!=0)return false;
+        return expected!=null&&PastedTextMatches(expected.TrimEnd('\r','\n','\u2028','\u2029'),before.TrimEnd('\r','\n','\u2028','\u2029'));
+    }
+    public static bool UntouchedManualInput(bool capturedTarget,bool committedOutput){return !capturedTarget&&!committedOutput;}
     public static bool ValidText(string text){return !string.IsNullOrEmpty(text)&&text.Length<=200000&&text.IndexOf('\0')<0;}
     public static bool CanCommit(Func<bool> context,Func<bool> selected){return context()&&selected()&&context();}
     public static bool MayRestoreClipboard(uint written,uint current,bool owned){return owned&&written==current;}

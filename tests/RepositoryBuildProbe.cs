@@ -2,8 +2,9 @@ using System;using System.IO;using System.Linq;using System.Diagnostics;using Ke
 public static class RepositoryBuildProbe {
  static int passed;static void Check(bool value,string message){if(!value)throw new Exception(message);passed++;}
  public static int Main(string[] args){
-  Check(KeyJaya.Version.Current=="1.9.4","Stable runtime version");
-  Check(FileVersionInfo.GetVersionInfo(typeof(Core).Assembly.Location).FileVersion=="1.9.4.0","Stable file version");
+  string version=File.ReadAllText(Path.Combine(args[0],"VERSION")).Trim();
+  Check(KeyJaya.Version.Current==version,"Packaged runtime version");
+  Check(FileVersionInfo.GetVersionInfo(typeof(Core).Assembly.Location).FileVersion==version+".0","Packaged file version");
   using(var core=new Core(args[0])){
    Check(!core.Short.Keys.Any(key=>key.StartsWith("email",StringComparison.OrdinalIgnoreCase)),"No personal trigger in compiled app defaults or fallback");
    foreach(string input in new[]{"Krsna","prasada","Srila","ācāryas","Vyasa-puja"})Check(core.CaretChoices(input,"unicode").Length>0,"Core vocabulary retained: "+input);
