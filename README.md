@@ -6,7 +6,7 @@
 
 # KeyJaya
 
-Kṛṣṇa is in Ctrl, now diacritics are too.
+Kṛṣṇa is in Ctrl.
 
 KeyJaya is a tray app that adds diacritics, expands abbreviations, and converts text
 between ASCII, Unicode, Balarama (Legacy), ITRANS, Devanagari, and Bengali script. 
@@ -19,15 +19,19 @@ between ASCII, Unicode, Balarama (Legacy), ITRANS, Devanagari, and Bengali scrip
 ## What you can do
 
 - Add diacritics to a letter, word, or selection, and cycle through spelling variations.
-- Works with Unicode and Balarama fonts, with automatic font detection.
-- Convert scripts and insert scripture verses and translations.
-- Expand your own abbreviations and customize the keyboard shortcuts.
+- Convert scripts between Roman, Devanagari, and Bengali
+- Insert scripture verses and translations.
+- Expand text from short abbreviations to full diacriticized text.
+- Add your own abbreviations and customize the keyboard shortcuts.
+- Auto-correct common English typing mistakes and auto-insert apostrophes to contractions.
 
 ## Get started
 
 1. Download the **KeyJaya Setup** `.exe` from the latest release and run it.
 2. Verify the white **की** icon is in the Windows system tray.
 3. Type `Krishna` in a text field and tap **Left Ctrl** to get `Kṛṣṇa`.
+4. Open **Cheat sheet** from the tray or read the user guide](docs/USER_GUIDE.md) for all shortcuts, script conversion behaviors, triggers,
+fonts, and settings.
 
 Requires **Windows x64 and .NET Framework 4.8**. Balarama fonts are supplied
 separately. See the [installation guide](docs/USER_GUIDE.md#installation) for
@@ -42,9 +46,6 @@ setup details.
 | `SP` | Left Ctrl | `Śrīla Prabhupāda` |
 | `a` | Backtick | `ā` |
 
-Open **Cheat sheet** from the tray for a quick reminder, or read the
-[user guide](docs/USER_GUIDE.md) for all shortcuts, script conversion, triggers,
-fonts, and settings.
 
 ## More information
 
