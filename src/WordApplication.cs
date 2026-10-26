@@ -117,6 +117,17 @@ namespace KeyJaya
 
         internal static object ForWindow(IntPtr owner)
         {
+            // Modern drafts are independent UIA editors. Word's native
+            // Selection still addresses the document body behind that draft.
+            if (WordCommentFocus.IsCommentFocus(owner))
+                return null;
+            return ForFrame(owner);
+        }
+
+        // Read-only metadata tools may inspect an existing background Word frame.
+        // They do not use Selection or turn this binding into editing permission.
+        internal static object ForFrame(IntPtr owner)
+        {
             IntPtr root = WordPasteOptions.Owner(owner);
             if (root == IntPtr.Zero || !WordPasteOptions.IsWord(root))
                 return null;

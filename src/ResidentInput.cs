@@ -69,7 +69,8 @@ namespace KeyJaya
             )
                 if (vk != trigger && (Native.GetAsyncKeyState((int)vk) & 0x8000) != 0)
                     correctionInputHold.InitialRelease(vk);
-            Diagnostic("manual input hold armed");
+            if (DateTime.UtcNow <= diagnosticUntil)
+                Diagnostic("manual input hold armed editor=" + NativeClass(owner));
             return true;
         }
 
@@ -87,10 +88,16 @@ namespace KeyJaya
             manualInputSelected = edit.UserSelection;
         }
 
-        void ManualSelectionVerified(SafeEdit edit, WordSelection.FontSnapshot continuation = null)
+        void ManualSelectionVerified(SafeEdit edit, WordSelection.FontSnapshot continuation = null, bool captureInReplacement = false)
         {
             if (manualInputActive && edit != null && WordPasteOptions.IsWord(edit.Window))
-                manualWordAnchor = WordSelection.ReplayAnchor.Capture(edit.Window, edit.Expected, continuation);
+            {
+                // Native Word replacement already proves the same document,
+                // visible range and continuation style. Capture inside that
+                // transaction rather than binding and scanning revisions twice.
+                if (!captureInReplacement || WordCommentFocus.IsCommentFocus(edit.Window))
+                    manualWordAnchor = WordSelection.ReplayAnchor.Capture(edit.Window, edit.Expected, continuation);
+            }
         }
 
         // Record a dispatched mutation before attempting post-edit caret proofs.

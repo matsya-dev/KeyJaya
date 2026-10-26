@@ -37,7 +37,8 @@ namespace KeyJaya
                     if (result != expected)
                         throw new Exception("per-font text " + result);
                     pass++;
-                    if (input.StartsWith("Tamala") ? spans.Length != 0 : spans.Length != 1 || spans[0].Start != 0 || spans[0].Length != 5)
+                    var italic = spans.Where(x => x.Italic).ToArray();
+                    if (input.StartsWith("Tamala") ? italic.Length != 0 : italic.Length != 1 || italic[0].Start != 0 || italic[0].Length != 5)
                         throw new Exception("cross-font proper name/italic context");
                     pass++;
                 }
@@ -71,6 +72,18 @@ namespace KeyJaya
 
                 if (Core.ReencodeCurrent("rājā", "balaram") != "räjä" || Core.ReencodeCurrent("räjä", "unicode") != "rājā")
                     throw new Exception("encoding changed spelling");
+                pass++;
+                var loanwords = new InDesignSelection.Snapshot
+                {
+                    Owner = new IntPtr(100),
+                    Text = "bhakti dharma",
+                    Font = "Noto Serif",
+                    Fonts = Enumerable.Range(0, 13).Select(n => n < 7 ? "Noto Serif\tRegular" : "ScaGoudy\tItalic").ToArray()
+                };
+                var loanEdit = (SafeEdit)typeof(SafeEdit).GetMethod("InDesignEdit", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { loanwords, false, true });
+                ItalicSpan[] loanSpans;
+                if (loanEdit.FontAutoOutput(core, fonts, out loanSpans) != "bhakti dharma" || !loanSpans.Any(x => x.Start == 0 && x.Length == 6 && x.Italic) || !loanSpans.Any(x => x.Start == 7 && x.Length == 6 && !x.Italic))
+                    throw new Exception("mixed-font passage normalizes unchanged Sanskrit and loanword italics");
                 pass++;
             }
 

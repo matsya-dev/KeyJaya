@@ -136,6 +136,8 @@ namespace KeyJaya
 
         public static System.Windows.Automation.AutomationElement Focused(IntPtr owner)
         {
+            if (WordPasteOptions.IsWord(owner))
+                return WordCommentFocus.Focused(owner);
             var normal = System.Windows.Automation.AutomationElement.FocusedElement;
             if (owner == IntPtr.Zero || owner != Native.GetForegroundWindow() || Class(owner) != "WinUIDesktopWin32WindowClass")
                 return normal;
@@ -1778,6 +1780,149 @@ namespace KeyJaya
                 }
 
                 keys.Add(Key(0x10, true));
+            }
+
+            return keys.ToArray();
+        }
+
+        static bool FieldBoundary(string text, int at)
+        {
+            if (at < 0 || at > text.Length)
+                return false;
+            if (at == 0 || at == text.Length)
+                return true;
+            char next = text[at], previous = text[at - 1];
+            var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(next);
+            return !(next == '\n' && previous == '\r') && !(char.IsLowSurrogate(next) && char.IsHighSurrogate(previous)) && next != '\u200d' && previous != '\u200d' && category != System.Globalization.UnicodeCategory.NonSpacingMark && category != System.Globalization.UnicodeCategory.SpacingCombiningMark && category != System.Globalization.UnicodeCategory.EnclosingMark;
+        }
+
+        static int FieldSteps(string text, int first, int last)
+        {
+            int start = Math.Min(first, last), end = Math.Max(first, last), count = 0;
+            if (!FieldBoundary(text, start) || !FieldBoundary(text, end))
+                return -1;
+            for (int n = start; n < end; n++, count++)
+            {
+                char c = text[n];
+                if (c == '\r')
+                {
+                    if (n + 1 >= end || text[++n] != '\n')
+                        return -1;
+                }
+                else if (c != '\n')
+                {
+                    var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+                    if (char.IsControl(c) || char.IsSurrogate(c) || category == System.Globalization.UnicodeCategory.NonSpacingMark || category == System.Globalization.UnicodeCategory.SpacingCombiningMark || category == System.Globalization.UnicodeCategory.EnclosingMark || category == System.Globalization.UnicodeCategory.Format)
+                        return -1;
+                }
+            }
+
+            return count;
+        }
+
+        // Only the path actually traversed needs known cursor units. An emoji
+        // or combining sequence elsewhere in the cell is left untouched.
+        public static Input[] RelativeFieldRangeKeys(string text, int currentStart, int currentEnd, int start, int end)
+        {
+            if (text == null || text.Length > 4096 || currentStart < 0 || currentEnd < currentStart || currentEnd > text.Length || start < 0 || end < start || end > text.Length)
+                return null;
+            if (!FieldBoundary(text, currentStart) || !FieldBoundary(text, currentEnd) || !FieldBoundary(text, start) || !FieldBoundary(text, end))
+                return null;
+            if (currentStart == start && currentEnd == end)
+                return new Input[0];
+            int selected = FieldSteps(text, start, end);
+            if (selected < 0)
+                return null;
+            int source = currentStart, target = start, best = int.MaxValue;
+            foreach (int from in new[]
+            {
+                currentStart,
+                currentEnd
+            }
+
+            )
+                foreach (int to in new[]
+                {
+                    start,
+                    end
+                }
+
+                )
+                {
+                    int distance = FieldSteps(text, from, to);
+                    if (distance >= 0 && distance < best)
+                    {
+                        source = from;
+                        target = to;
+                        best = distance;
+                    }
+                }
+
+            if (best == int.MaxValue)
+                return null;
+            var keys = new System.Collections.Generic.List<Input>();
+            Action<ushort, bool> add = (key, up) =>
+            {
+                var item = Key(key, up);
+                item.union.keyboard.extra = new UIntPtr(OwnCorrectionInput);
+                keys.Add(item);
+            };
+            Action<ushort> tap = key =>
+            {
+                add(key, false);
+                add(key, true);
+            };
+            if (currentStart != currentEnd)
+                tap(source == currentStart ? (ushort)0x25 : (ushort)0x27);
+            for (int n = 0; n < best; n++)
+                tap(target < source ? (ushort)0x25 : (ushort)0x27);
+            if (start != end)
+            {
+                add(0x10, false);
+                for (int n = 0; n < selected; n++)
+                    tap(target == start ? (ushort)0x27 : (ushort)0x25);
+                add(0x10, true);
+            }
+
+            return keys.ToArray();
+        }
+
+        // A line break in Excel Edit mode is Alt+Enter, never bare Enter.
+        // This transport does not use or replace the user's clipboard.
+        public static Input[] ExcelTextKeys(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length > 4096)
+                return null;
+            var keys = new System.Collections.Generic.List<Input>();
+            foreach (char c in text)
+                if (char.IsSurrogate(c) || char.IsControl(c) && c != '\r' && c != '\n')
+                    return null;
+            for (int n = 0; n < text.Length; n++)
+            {
+                char c = text[n];
+                if (c == '\r')
+                {
+                    if (n + 1 >= text.Length || text[++n] != '\n')
+                        return null;
+                    c = '\n';
+                }
+
+                if (c == '\n')
+                {
+                    keys.Add(Key(0x12, false));
+                    keys.Add(Key(13, false));
+                    keys.Add(Key(13, true));
+                    keys.Add(Key(0x12, true));
+                }
+                else
+                    keys.AddRange(UnicodeCharacter(c.ToString()));
+            }
+
+            for (int n = 0; n < keys.Count; n++)
+            {
+                var key = keys[n];
+                key.union.keyboard.extra = new UIntPtr(OwnCorrectionInput);
+                keys[n] = key;
             }
 
             return keys.ToArray();

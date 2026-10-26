@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows.Automation;
 using System.Windows.Forms;
 
 namespace KeyJaya
@@ -128,6 +129,259 @@ namespace KeyJaya
             }
 
             return signature.ToString();
+        }
+
+        static string CommentText(object comment)
+        {
+            object range = Get(comment, "Range");
+            try
+            {
+                return ((string)Get(range, "Text") ?? "").TrimEnd('\r');
+            }
+            finally
+            {
+                Release(range);
+            }
+        }
+
+        static void CommentRange(object comment, int offset, int length)
+        {
+            object range = Get(comment, "Range"), app = null, window = null;
+            try
+            {
+                int start = Convert.ToInt32(Get(range, "Start"));
+                Call(range, "SetRange", start + offset, start + offset + length);
+                Call(range, "Select");
+                // Range.Select can move the COM selection into a hidden pane
+                // after a view change without activating that pane for typing.
+                app = Get(range, "Application");
+                window = Get(app, "ActiveWindow");
+                IntPtr owner = new IntPtr(Convert.ToInt64(Get(window, "Hwnd")));
+                var editors = AutomationElement.FromHandle(owner).FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit));
+                AutomationElement commentEditor = null;
+                foreach (AutomationElement editor in editors)
+                {
+                    var name = new StringBuilder(64);
+                    Native.GetClassName(new IntPtr(editor.Current.NativeWindowHandle), name, name.Capacity);
+                    if (name.ToString() != "_WwG")
+                        continue;
+                    Check(commentEditor == null, "Fixture must expose only one native comment edit pane");
+                    commentEditor = editor;
+                }
+
+                if (commentEditor != null)
+                {
+                    commentEditor.SetFocus();
+                    Call(range, "Select");
+                }
+            }
+            finally
+            {
+                Release(window);
+                Release(app);
+                Release(range);
+            }
+        }
+
+        static void PrepareComment(object comment, string text)
+        {
+            object range = Get(comment, "Range"), font = null;
+            try
+            {
+                Set(range, "Text", text);
+                font = Get(range, "Font");
+                Set(font, "Name", "Calibri");
+                Set(font, "Size", 12f);
+                Set(font, "Bold", 0);
+                Set(font, "Italic", 0);
+                Check(Convert.ToInt32(Get(range, "StoryType")) == 4, "Comment/reply uses the native comments story");
+            }
+            finally
+            {
+                Release(font);
+                Release(range);
+            }
+
+            CommentRange(comment, text.Length, 0);
+        }
+
+        static SafeEdit.CaretTarget CommentCaret(IntPtr owner, string expected)
+        {
+            // Word can publish the preceding pane's UIA selection briefly after
+            // switching comments or views. Use the resident's bounded retry model.
+            for (int attempt = 0; attempt < 25; attempt++)
+            {
+                var caret = SafeEdit.ReadCaret(owner, false);
+                if (caret != null && caret.Text == expected)
+                    return caret;
+                Application.DoEvents();
+                Thread.Sleep(20);
+            }
+
+            return null;
+        }
+
+        static void CheckComment(object app, object document, object comment, object untouched, IntPtr owner)
+        {
+            const string input = "Earlier untouched prasada", output = "Earlier untouched prasāda";
+            string body = Text(document), neighbor = CommentText(untouched);
+            Func<bool> context = () => Native.GetForegroundWindow() == owner && WordPasteOptions.DocumentFocused(owner);
+            PrepareComment(comment, input);
+            Check(context(), "Writable native comment/reply owns focus without a Body ancestor");
+            var location = WordSelection.OwnedTextAnchor.Capture(owner, "prasada", false);
+            Check(location != null && location.AtCaret(), "Own the current comment/reply caret before switching editors");
+            CommentRange(untouched, neighbor.Length, 0);
+            Check(!location.AtCaret(), "Identical neighboring comment text cannot take ownership of the caret");
+            CommentRange(comment, input.Length, 0);
+            var caret = CommentCaret(owner, "prasada");
+            Check(caret != null && caret.Text == "prasada" && caret.Edit != null, "Read the word inside the focused comment/reply");
+            Check(caret.Edit.Select(context) && caret.Edit.ExactSelection(), "Select exactly the comment/reply word");
+            Check(WordSelection.SelectedFontName(owner, "prasada") == "Calibri", "Resolve comment/reply font from the native selection");
+            bool handled;
+            Check(WordSelection.Replace(owner, "prasada", "prasāda", context, out handled, new[] { new ItalicSpan(0, 7) }, false) && handled, "Convert a comment/reply word with native formatting");
+            Check(CommentText(comment) == output && Text(document) == body && CommentText(untouched) == neighbor, "Only the active comment/reply changed");
+            object selection = Get(app, "Selection"), font = null;
+            try
+            {
+                font = Get(selection, "Font");
+                Check(Convert.ToInt32(Get(font, "Italic")) == 0 && Convert.ToSingle(Get(font, "Size")) == 12f, "Typing after comment conversion retains ordinary formatting");
+                Release(font);
+                font = null;
+                CommentRange(comment, 18, 7);
+                font = Get(selection, "Font");
+                Check(Convert.ToInt32(Get(font, "Italic")) == -1, "Converted comment word receives italics");
+                Release(font);
+                font = null;
+                Call(document, "Undo", 1);
+                Check(CommentText(comment) == input && Text(document) == body, "One native undo restores the comment word");
+                CommentRange(comment, input.Length, 0);
+                var owned = WordSelection.OwnedTextAnchor.Capture(owner, "prasada", false);
+                Check(owned != null && owned.AtCaret() && owned.Select(), "Comment/reply supports an owned native text anchor");
+                var replay = WordSelection.ReplayAnchor.Capture(owner, "prasada");
+                Check(replay != null, "Capture comment/reply continuation before held typing");
+                Check(WordSelection.Replace(owner, "prasada", "prasāda", context, out handled, new[] { new ItalicSpan(0, 7) }, false, replay: replay), "Convert with a deferred native undo record");
+                Check(replay.Resume("prasāda", false, true), "Settle the comment/reply caret and typing format before replay");
+                Call(selection, "TypeText", " next Word");
+                Check(CommentText(comment) == output + " next Word", "Continued native typing stays in the comment/reply in order");
+                font = Get(selection, "Font");
+                Check(Convert.ToInt32(Get(font, "Italic")) == 0 && Convert.ToSingle(Get(font, "Size")) == 12f, "Continued comment text has its original nonitalic size");
+                Release(font);
+                font = null;
+                PrepareComment(comment, "Earlier untouched a");
+                var letter = WordSelection.OwnedTextAnchor.Capture(owner, "a");
+                Check(letter != null && letter.Select(), "Single-letter conversion owns the comment/reply character");
+                Check(WordSelection.Replace(owner, "a", "ā", context, out handled, null, false), "Single-letter diacritics work in comments/replies");
+                Check(CommentText(comment) == "Earlier untouched ā", "Letter conversion preserves preceding comment text");
+                PrepareComment(comment, "Earlier untouched SP>");
+                var trigger = SafeEdit.BehindCaret(owner, "SP>");
+                Check(trigger != null && trigger.Select(context), "Explicit trigger targets comment/reply text");
+                Check(WordSelection.ReplaceExpansion(owner, "SP>", "Śrīla Prabhupāda", context, out handled), "Expand an abbreviation inside a comment/reply");
+                Check(CommentText(comment) == "Earlier untouched Śrīla Prabhupāda", "Abbreviation leaves surrounding comment text intact");
+                PrepareComment(comment, "Earlier untouched raja");
+                WordSelection.FontSnapshot original = null;
+                try
+                {
+                    foreach (string next in new[]
+                    {
+                        "rāja",
+                        "rājā",
+                        "raja"
+                    }
+
+                    )
+                    {
+                        var cycle = CommentCaret(owner, next == "rāja" ? "raja" : next == "rājā" ? "rāja" : "rājā");
+                        Check(cycle != null && cycle.Edit != null && cycle.Edit.Select(context), "Comment/reply cycling retains the caret target");
+                        Check(WordSelection.Replace(owner, cycle.Text, next, context, out handled, next == "raja" ? null : new[] { new ItalicSpan(0, 4) }, false, restoreFonts: next == "raja" ? original : null, captureFonts: original == null ? (Action<WordSelection.FontSnapshot>)(value => original = value) : null), "Cycle and restore original comment/reply spelling and fonts");
+                    }
+
+                    Check(CommentText(comment) == "Earlier untouched raja", "Complete comment/reply cycle restores original text");
+                }
+                finally
+                {
+                    if (original != null)
+                        original.Dispose();
+                }
+
+                PrepareComment(comment, input);
+                object legacyRange = Get(comment, "Range"), legacyFont = null;
+                try
+                {
+                    legacyFont = Get(legacyRange, "Font");
+                    Set(legacyFont, "Name", "ScaGoudy");
+                }
+                finally
+                {
+                    Release(legacyFont);
+                    Release(legacyRange);
+                }
+
+                var legacy = CommentCaret(owner, "prasada");
+                Check(legacy != null && legacy.Font == "ScaGoudy" && legacy.Edit.Select(context), "Detect the comment/reply Balarama font and select its word");
+                Check(WordSelection.Replace(owner, "prasada", "prasäda", context, out handled, null, false, "ScaGoudy"), "Convert comment/reply text in Balarama encoding");
+                Check(CommentText(comment) == "Earlier untouched prasäda", "Balarama comment/reply output retains its preceding text");
+                PrepareComment(comment, "Earlier untouched raja");
+                CommentRange(comment, 18, 4);
+                bool present;
+                var selected = SafeEdit.ReadSelected(owner, out present);
+                Check(present && selected != null && selected.Expected == "raja", "Read a user-selected comment/reply span");
+                Check(WordSelection.Replace(owner, "raja", "rāja", () => false, out handled) == false && CommentText(comment) == "Earlier untouched raja", "Expired comment context cannot commit");
+                CommentRange(untouched, neighbor.Length, 0);
+                Check(!owned.AtCaret(), "An anchor cannot follow focus into another comment/reply");
+                Check(Text(document) == body && CommentText(untouched) == neighbor, "Body and neighboring comment/reply remain unchanged throughout");
+            }
+            finally
+            {
+                Release(font);
+                Release(selection);
+            }
+        }
+
+        static void CommentEdits(object app, object document, IntPtr owner)
+        {
+            object comments = null, anchor = null, parent = null, replies = null, reply = null, window = null, view = null;
+            int originalView = 0;
+            try
+            {
+                comments = Get(document, "Comments");
+                anchor = Call(document, "Range", 0, 7);
+                parent = Call(comments, "Add", anchor, "Earlier untouched prasada");
+                replies = Get(parent, "Replies");
+                reply = Call(replies, "Add", anchor, "Earlier untouched prasada");
+                Check(Convert.ToInt32(Get(replies, "Count")) == 1, "Fixture contains a real threaded reply");
+                window = Get(document, "ActiveWindow");
+                view = Get(window, "View");
+                originalView = Convert.ToInt32(Get(view, "Type"));
+                foreach (int kind in new[]
+                {
+                    1,
+                    3
+                }
+
+                )
+                {
+                    Set(view, "Type", kind);
+                    Set(view, "SplitSpecial", 15);
+                    Console.WriteLine("Native comment/reply checks: view=" + kind);
+                    PrepareComment(parent, "Earlier untouched prasada");
+                    PrepareComment(reply, "Earlier untouched prasada");
+                    CheckComment(app, document, parent, reply, owner);
+                    PrepareComment(parent, "Earlier untouched prasada");
+                    CheckComment(app, document, reply, parent, owner);
+                }
+            }
+            finally
+            {
+                if (view != null && originalView != 0)
+                    Set(view, "Type", originalView);
+                Release(view);
+                Release(window);
+                Release(reply);
+                Release(replies);
+                Release(parent);
+                Release(anchor);
+                Release(comments);
+            }
         }
 
         // Debugger-style fault injection pauses only the new test Word's UI
@@ -295,6 +549,10 @@ namespace KeyJaya
             bool physical = args.Length > 3 && args[3] == "physical";
             Check(scratch.StartsWith(Path.Combine(source, "out") + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && !Directory.Exists(scratch), "Require fresh native-test fixture beneath out/");
             Directory.CreateDirectory(scratch);
+            Action<string> trace = value => File.AppendAllText(Path.Combine(scratch, "editing-trace.txt"), value + Environment.NewLine);
+            WordSelection.Trace = trace;
+            SafeEdit.Trace = trace;
+            WordApplication.Trace = trace;
             int[] existing = Process.GetProcessesByName("WINWORD").Select(process => process.Id).ToArray();
             File.WriteAllText(Path.Combine(scratch, "pre-existing-processes.txt"), string.Join(",", existing));
             object app = null, documents = null, document = null, retained = null;
@@ -392,6 +650,7 @@ namespace KeyJaya
 
                     Call(document, "Undo", 1);
                     Check(Text(document) == input && Fonts(document, input.Length) == originalFonts, "One native undo restores text and all original fonts");
+                    CommentEdits(app, document, owner);
                     // Change focus after at least one real patch. The production
                     // replacement must roll back the partial transaction in its own doc.
                     Prepare(document, input);
@@ -448,6 +707,8 @@ namespace KeyJaya
                 finally
                 {
                     WordSelection.Trace = null;
+                    SafeEdit.Trace = null;
+                    WordApplication.Trace = null;
                     try
                     {
                         if (owned)

@@ -37,6 +37,20 @@ namespace KeyJaya
 
         public static int Main(string[] args)
         {
+            foreach (string caption in new[]
+            {
+                "KeyJaya shortcuts",
+                "KeyJaya triggers",
+                "KeyJaya trigger",
+                "KeyJaya — Word shortcut conflicts",
+                "Unlisted future settings dialog"
+            }
+
+            )
+                Check(Resident.ReferenceSurface(42, 42, caption, "WindowsForms10.Window"), "typing remains literal in every resident editor regardless of caption");
+            Check(Resident.ReferenceSurface(42, 42, "Rule could not be added", "#32770"), "resident message boxes also bypass conversion");
+            Check(!Resident.ReferenceSurface(17, 42, "Word document", "OpusApp") && !Resident.ReferenceSurface(0, 42, "", ""), "other apps and missing owners are not treated as resident editors");
+            Check(Resident.ReferenceSurface(17, 42, "KeyJaya cheat sheet", "WindowsForms10.Window"), "separate cheat-sheet process keeps its literal-input exception");
             string root = Path.GetFullPath(args[0]), path = Configuration.Short(root), factory = Path.Combine(root, "editor-test-defaults.yml");
             byte[] saved = File.ReadAllBytes(path);
             string original = "# Header stays exact.\r\nmatches:\r\n  - trigger: 'SP>'\r\n    replace: 'Śrīla Prabhupāda'\r\n    # Keep this comment.\r\n  - trigger: 'SP<'\r\n    replace: 'Çréla Prabhupäda'\r\n  - trigger: 'SP?'\r\n    replace: 'Srila Prabhupada'\r\n  # Unrelated entry/comment.\r\n  - trigger: ':signature'\r\n    replace: |-\r\n      Best wishes,\r\n      Reader # literal\r\n  - trigger: 'ZZ'\r\n    replace: 'Keep exact user text'\r\n";

@@ -149,7 +149,7 @@ namespace KeyJaya
             return !IsMarkdownSource ? convert(input) : !MarkdownAllowed ? input : MarkdownFormatting.ConvertProtected(input, convert);
         }
 
-        public string MarkdownOutput(string output, Core core, string mode, string trigger = null)
+        public string MarkdownOutput(string output, Core core, string mode, string trigger = null, bool individual = false)
         {
             if (!IsMarkdownSource || !MarkdownAllowed)
                 return output;
@@ -157,17 +157,17 @@ namespace KeyJaya
                 return output;
             bool wrapped = expected.Length > 2 && expected[0] == '*' && expected[expected.Length - 1] == '*';
             if (wrapped && output[0] != '*')
-                return "*" + output + "*";
+                output = "*" + output + "*";
             try
             {
-                if (range != null && object.Equals(range.GetAttributeValue(TextPattern.IsItalicAttribute), true))
+                if (individual && range != null && object.Equals(range.GetAttributeValue(TextPattern.IsItalicAttribute), true) && !core.ControlItalics(MarkdownWord(expected), output, mode, true).Any(x => !x.Italic))
                     return output;
             }
             catch
             {
             }
 
-            return MarkdownFormatting.Italicize(output, trigger == null ? core.CtrlItalics(MarkdownWord(expected), output, mode) : core.TriggerItalics(trigger, output, mode), MarkdownPrefix ?? "", MarkdownSuffix);
+            return MarkdownFormatting.Apply(output, value => trigger == null ? core.ControlItalics(MarkdownWord(expected), value, mode, individual) : core.TriggerItalics(trigger, value, mode), MarkdownPrefix ?? "", MarkdownSuffix);
         }
 
         public string DisplayedOutput(string output)
@@ -225,6 +225,17 @@ namespace KeyJaya
                 caretTail = caretTail.Substring(1);
         }
 
+        public bool ExpandedMarkdownSelection { get; private set; }
+
+        public void ExpandSelectedMarkdown()
+        {
+            if (!userSelection || ExpandedMarkdownSelection || !IsMarkdownSource)
+                return;
+            string before = expected;
+            ExpandMarkdownCaret();
+            ExpandedMarkdownSelection = before != expected;
+        }
+
         public bool IsInDesign
         {
             get
@@ -249,6 +260,38 @@ namespace KeyJaya
             get
             {
                 return IsInDesign || excelCell != null;
+            }
+        }
+
+        public bool SupportsNativeItalics
+        {
+            get
+            {
+                return inDesign != null;
+            }
+        }
+
+        bool readInitialItalic;
+        bool? initialItalic;
+        public bool? InitialItalic
+        {
+            get
+            {
+                if (!readInitialItalic)
+                {
+                    readInitialItalic = true;
+                    try
+                    {
+                        object value = range == null ? null : range.GetAttributeValue(TextPattern.IsItalicAttribute);
+                        if (value is bool)
+                            initialItalic = (bool)value;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                return initialItalic;
             }
         }
 
@@ -335,6 +378,10 @@ namespace KeyJaya
 
         static SafeEdit ExcelEdit(ExcelCellField.Snapshot snap, bool letter = false, bool selected = false)
         {
+            // A selected passage is accepted only if both its insertion and
+            // later retained selection have a verified keyboard plan.
+            if (snap != null && selected && (Native.ExcelTextKeys(snap.Text) == null || ExcelCellField.SelectionKeys(snap.Full, snap.End, snap.End, snap.Start, snap.End) == null))
+                return null;
             return snap == null ? null : new SafeEdit(snap.Owner, null, snap.Text, null, letter)
             {
                 excelCell = snap,
@@ -347,7 +394,11 @@ namespace KeyJaya
 
         static CaretTarget ExcelCaret(IntPtr window, bool letter, bool componentOnly)
         {
-            var snap = ExcelCellField.Capture(window);
+            return ExcelCaret(ExcelCellField.Capture(window), letter, componentOnly);
+        }
+
+        static CaretTarget ExcelCaret(ExcelCellField.Snapshot snap, bool letter, bool componentOnly)
+        {
             if (snap == null || snap.SelectionStart != snap.SelectionEnd)
                 return null;
             int caret = snap.SelectionStart;
@@ -369,6 +420,27 @@ namespace KeyJaya
             }
 
             return new CaretTarget(snap.Text, null, false, ExcelEdit(snap, letter && SingleLetters.Supported(snap.Text)));
+        }
+
+        // One discovery read can describe either selection or caret. The edit
+        // adapter still rechecks live text, range, mode and owner before input.
+        internal static SafeEdit ReadExcelDiscovery(Func<ExcelCellField.Snapshot> capture, out bool selectionPresent, out CaretTarget caret)
+        {
+            var snap = capture();
+            caret = null;
+            selectionPresent = snap == null || snap.SelectionStart != snap.SelectionEnd;
+            if (snap == null)
+                return null;
+            if (selectionPresent)
+                return ExcelEdit(snap, false, true);
+            caret = ExcelCaret(snap, false, false);
+            return null;
+        }
+
+        internal static SafeEdit ReadExcelInsertionOrSelection(Func<ExcelCellField.Snapshot> capture)
+        {
+            var snap = capture();
+            return snap == null ? null : ExcelEdit(snap, false, snap.SelectionStart != snap.SelectionEnd);
         }
 
         static bool FindCaretWordRange(TextPatternRange left, TextPatternRange right, TextPatternRange caret, bool componentOnly, out TextPatternRange result, out CaretWordSpan span)
@@ -1160,8 +1232,8 @@ namespace KeyJaya
 
                 string input = expected.Substring(at, end - at), value = mode == null ? input : core.ConvertCopied(input, mode);
                 if (mode != null)
-                    foreach (var span in core.ItalicWords(value, mode))
-                        spans.Add(new ItalicSpan(output.Length + span.Start, span.Length, span.Force));
+                    foreach (var span in core.ControlItalics(null, value, mode, ctrlExpansion && Core.SingleControlWord(expected)))
+                        spans.Add(new ItalicSpan(output.Length + span.Start, span.Length, span.Force, span.Italic));
                 output.Append(value);
                 common.Append(mode == "balaram" ? EncodingMap.FromBalaram(value) : value);
                 formats.AddRange(Enumerable.Repeat(mode, value.Length));
@@ -1174,7 +1246,7 @@ namespace KeyJaya
                 string named = core.ConvertCopied(common.ToString(), "unicode");
                 if (named.Length == result.Length)
                 {
-                    italics = core.ItalicWords(named, "unicode");
+                    italics = core.ControlItalics(null, named, "unicode", ctrlExpansion && Core.SingleControlWord(expected));
                     var encoded = new StringBuilder();
                     for (int n = 0; n < named.Length; n++)
                         encoded.Append(formats[n] == "balaram" ? EncodingMap.Balaram(named[n].ToString()) : named[n].ToString());
@@ -2322,7 +2394,12 @@ namespace KeyJaya
         {
             try
             {
-                var focus = AutomationElement.FocusedElement;
+                if (!IsWord(owner))
+                    return false;
+                bool modern;
+                var focus = WordCommentFocus.Focused(owner, out modern);
+                if (modern)
+                    return WordCommentFocus.Editable(focus);
                 if (!Owned(owner, focus))
                     return false;
                 int process = focus.Current.ProcessId;
@@ -2337,6 +2414,27 @@ namespace KeyJaya
                         return false;
                     if (WordPasteGuard.DocumentNode(focus.Current.AutomationId, type == ControlType.Document, menu))
                         return true;
+                    // Classic comment/reply panes expose an Edit on a native
+                    // _WwG window, with neither Body ID nor Document ancestor.
+                    // Require that exact Word-owned editor and a writable text
+                    // selection; ribbon/search fields must still be rejected.
+                    if (type == ControlType.Edit)
+                    {
+                        IntPtr handle = new IntPtr(focus.Current.NativeWindowHandle);
+                        uint nativeProcess;
+                        Native.GetWindowThreadProcessId(handle, out nativeProcess);
+                        var name = new StringBuilder(64);
+                        Native.GetClassName(handle, name, name.Capacity);
+                        object provider;
+                        if (handle != IntPtr.Zero && nativeProcess == (uint)process && name.ToString() == "_WwG" && focus.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+                        {
+                            var selected = ((TextPattern)provider).GetSelection();
+                            bool editable = selected.Length == 1 && object.Equals(selected[0].GetAttributeValue(TextPattern.IsReadOnlyAttribute), false);
+                            if (WordPasteGuard.DocumentNode(focus.Current.AutomationId, false, false, name.ToString(), editable))
+                                return true;
+                        }
+                    }
+
                     focus = TreeWalker.ControlViewWalker.GetParent(focus);
                 }
 
@@ -2354,7 +2452,7 @@ namespace KeyJaya
             {
                 if (!IsWord(owner) || Owner(Native.GetForegroundWindow()) != owner)
                     return false;
-                var focus = AutomationElement.FocusedElement;
+                var focus = EmbeddedWebViewFocus.Focused(owner);
                 if (Owned(owner, focus))
                     for (int i = 0; i < 10 && focus != null; i++)
                     {

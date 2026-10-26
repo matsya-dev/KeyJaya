@@ -55,6 +55,12 @@ then review and remove your KeyJaya installation and its backup folders yourself
 
 ## Logs and diagnostics
 
+The optional **Check Word conflicts…** button in Customize shortcuts reads assignments
+and active-window ownership from already-open Word instances. A hidden,
+time-limited helper performs this check only when requested. It does not read
+document text, activate Word, execute Word commands, change assignments or save
+templates. Results appear locally in the check window; nothing is uploaded.
+
 Normal runtime logs contain status/error types rather than a transcript of text
 you type. Logs rotate after roughly 256 KiB, retaining one previous file. Setup
 failure logs contain exception details and can include local file paths.

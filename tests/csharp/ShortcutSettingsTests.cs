@@ -3,14 +3,30 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Threading;
+using System.Web.Script.Serialization;
 
 namespace KeyJaya
 {
     public static class ShortcutSettingsTests
     {
-        public static int Main()
+        public static int Main(string[] args)
         {
-            int passed = 0;
+            // The production parent runner can be tested without Word: only a
+            // disposable child of this test executable handles this command.
+            if (args.Length > 0 && args[0] == "--check-word-shortcuts")
+            {
+                var request = new JavaScriptSerializer().Deserialize<Dictionary<string, string>>(Console.In.ReadToEnd());
+                if (request["word"] == "F24")
+                    Thread.Sleep(12000);
+                if (request["letter"] == "F23")
+                    Console.Write("invalid test report");
+                else
+                    Console.Write(new JavaScriptSerializer().Serialize(new WordShortcutReport { Status = "Isolated test helper", Complete = true, WindowsChecked = 1 }));
+                return 0;
+            }
+
+            int passed = WordShortcutContracts.Run();
             var defaults = new ShortcutSettings(null);
             for (int n = 0; n < 8; n++)
             {

@@ -216,7 +216,7 @@ namespace KeyJaya
 
                 if (italics != null)
                 {
-                    script += "var spans=" + json.Serialize(italics.Select(s => new { start = s.Start, length = s.Length, force = s.Force }).ToArray()) + ";for(var n=0;n<spans.length;n++){var x=spans[n];for(var j=0;j<x.length;j++){var c=q.st.characters.item(A+x.start+j),style=String(c.fontStyle);if(protectedStyle(c,q.d)||/italic|oblique/i.test(style))continue;if(/bold/i.test(style)&&!x.force)continue;var family=c.appliedFont.fontFamily,target=/bold/i.test(style)?'Bold Italic':'Italic',f=app.fonts.itemByName(family+'\\t'+target);if(f.isValid)c.appliedFont=f;}}";
+                    script += "var spans=" + json.Serialize(italics.Select(s => new { start = s.Start, length = s.Length, force = s.Force, italic = s.Italic }).ToArray()) + ";for(var n=0;n<spans.length;n++){var x=spans[n];for(var j=0;j<x.length;j++){var c=q.st.characters.item(A+x.start+j),style=String(c.fontStyle),hasItalic=/italic|oblique/i.test(style);if(protectedStyle(c,q.d)&&!x.force)continue;if(x.italic&&hasItalic||!x.italic&&!hasItalic)continue;if(x.italic&&/bold/i.test(style)&&!x.force)continue;var family=c.appliedFont.fontFamily,target=x.italic?(/bold/i.test(style)?'Bold Italic':'Italic'):style.replace(/\\s*(Italic|Oblique)\\b/ig,'').replace(/^\\s+|\\s+$/g,'');if(!target)target='Regular';var f=app.fonts.itemByName(family+'\\t'+target);if(!f.isValid&&!x.italic&&!/bold|demi|heavy/i.test(style)){var normal=['Regular','Roman','Book','Normal'];for(var z=0;z<normal.length;z++){f=app.fonts.itemByName(family+'\\t'+normal[z]);if(f.isValid)break;}}if(f.isValid)c.appliedFont=f;}}";
                 }
 
                 if (retain)

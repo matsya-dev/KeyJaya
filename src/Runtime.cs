@@ -90,6 +90,7 @@ namespace KeyJaya
         readonly Native.Hook keyboard, mouse;
         readonly Native.WinEvent foreground;
         IntPtr keyHook, mouseHook, focusHook, controlFocusHook;
+        IDisposable wordCommentFocus;
         bool busy;
         Process cheatProcess;
         TriggerEditorWindow triggerEditor;
@@ -117,6 +118,7 @@ namespace KeyJaya
                 EmbeddedWebViewFocus.Trace = Diagnostic;
                 WordSelection.Trace = Diagnostic;
                 WordApplication.Trace = Diagnostic;
+                WordCommentFocus.Trace = Diagnostic;
                 ClipboardBackup.Trace = Diagnostic;
                 InDesignSelection.Trace = Diagnostic;
                 InDesignFindField.Trace = Diagnostic;
@@ -207,6 +209,8 @@ namespace KeyJaya
             base.OnHandleCreated(e);
             if (trayPreview)
                 return;
+            if (!probe)
+                wordCommentFocus = WordCommentFocus.Listen();
             Register();
             keyHook = Native.SetWindowsHookEx(13, keyboard, Native.GetModuleHandle(null), 0);
             mouseHook = Native.SetWindowsHookEx(14, mouse, Native.GetModuleHandle(null), 0);
@@ -248,6 +252,8 @@ namespace KeyJaya
 
         void DispatchShortcut(string mode, bool literal = false)
         {
+            if (IsReferenceWindow(Native.GetForegroundWindow()))
+                return;
             IntPtr inputOwner = WordPasteOptions.Owner(Native.GetForegroundWindow());
             if (!manualInputActive && !BeginManualInput(inputOwner))
                 return;
@@ -306,7 +312,13 @@ namespace KeyJaya
 
                 CloseCheatSheet();
                 RefreshMenu();
-            }))
+            }, CheckWordShortcuts))
+                window.ShowDialog();
+        }
+
+        void CheckWordShortcuts(ShortcutSettings settings)
+        {
+            using (var window = new WordShortcutWindow(settings))
                 window.ShowDialog();
         }
 
@@ -378,11 +390,10 @@ namespace KeyJaya
 
         void ClearWordUndoFonts()
         {
-            if (wordUndoFonts != null)
-            {
-                wordUndoFonts.Dispose();
-                wordUndoFonts = null;
-            }
+            var retiring = wordUndoFonts;
+            wordUndoFonts = null;
+            if (retiring != null)
+                retiring.Retire();
         }
 
         void ResetInput(bool preserveControl = false)
@@ -1079,57 +1090,101 @@ namespace KeyJaya
             });
         }
 
-        void DiscoverWord(IntPtr owner)
+        sealed class PreparedWordDiscovery
+        {
+            public readonly IntPtr Owner;
+            public readonly long Generation;
+            public readonly SafeEdit Selection;
+            public readonly bool SelectionPresent;
+            public PreparedWordDiscovery(IntPtr owner, long generation, SafeEdit selection, bool present)
+            {
+                Owner = owner;
+                Generation = generation;
+                Selection = selection;
+                SelectionPresent = present;
+            }
+        }
+
+        void DiscoverWord(IntPtr owner, PreparedWordDiscovery prepared = null)
         {
             Diagnostic("word discovery entered busy=" + busy + " probe=" + probe + " focus=" + NativeFocusClass());
             if (busy)
                 return;
             long generation = state.Generation;
+            if (prepared != null && (prepared.Owner != owner || prepared.Generation != generation))
+            {
+                FinishManualInput();
+                return;
+            }
+
             int[] field = FocusId();
             string last = caretCharacterOwner == owner ? caretCharacter : null;
             busy = true;
             Task.Run(() =>
             {
                 SafeEdit edit = null;
-                bool inserted = false, delegated = false;
+                bool inserted = false, delegated = false, retainWordSelection = false;
                 try
                 {
                     if (probe || !WaitModifiers(generation))
                         return;
                     bool selectionPresent;
-                    SafeEdit selected = SafeEdit.ReadSelected(owner, out selectionPresent);
+                    SafeEdit.CaretTarget selectedWord = null;
+                    string selectedWordMode = null;
+                    SafeEdit.CaretTarget excelCaret = null;
+                    SafeEdit selected;
+                    if (prepared != null)
+                    {
+                        // This request already proved selection and dismissed Word's
+                        // paste UI. Reuse that evidence only within this generation;
+                        // caret discovery and the final native commit still revalidate.
+                        selectionPresent = prepared.SelectionPresent;
+                        selected = prepared.Selection;
+                    }
+                    else
+                        selected = ExcelCellField.Focused(owner) ? SafeEdit.ReadExcelDiscovery(() => ExcelCellField.Capture(owner), out selectionPresent, out excelCaret) : SafeEdit.ReadSelected(owner, out selectionPresent);
                     Diagnostic("word initial selection present=" + selectionPresent + " readable=" + (selected != null) + " excel=" + ExcelCellField.Focused(owner));
                     if (selectionPresent)
                     {
                         if (selected == null)
                             return;
+                        selected.ExpandSelectedMarkdown();
                         string selectedMode = selected.SelectionEncoding(fontEncoding, encodingSettings, core);
                         if (selectedMode == null)
                             return;
-                        BeginInvoke((Action)(() =>
+                        if (WordFormattingSurface(owner, selected) && formattingSettings.Italicize && Core.AutomaticItalicMode(selectedMode) && Core.SingleControlWord(SafeEdit.MarkdownWord(selected.Expected)))
                         {
-                            bool current;
-                            lock (sync)
+                            selectedWord = new SafeEdit.CaretTarget(selected.Expected, selected.SelectedFont, selected.SelectedMixed, selected);
+                            selectedWordMode = selectedMode;
+                            retainWordSelection = true;
+                        }
+                        else
+                        {
+                            BeginInvoke((Action)(() =>
                             {
-                                busy = false;
-                                current = state.Generation == generation && !state.Paused && owner == Native.GetForegroundWindow();
-                            }
+                                bool current;
+                                lock (sync)
+                                {
+                                    busy = false;
+                                    current = state.Generation == generation && !state.Paused && owner == Native.GetForegroundWindow();
+                                }
 
-                            if (!current)
-                            {
-                                Complete();
-                                return;
-                            }
+                                if (!current)
+                                {
+                                    Complete();
+                                    return;
+                                }
 
-                            ConvertSelected(selected, selectedMode, false, false, true);
-                            if (!busy)
-                                FinishManualInput();
-                        }));
-                        delegated = true;
-                        return;
+                                ConvertSelected(selected, selectedMode, false, false, true);
+                                if (!busy)
+                                    FinishManualInput();
+                            }));
+                            delegated = true;
+                            return;
+                        }
                     }
 
-                    if (WordPasteOptions.IsWord(owner))
+                    if (prepared == null && WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner))
                     {
                         Thread.Sleep(40);
                         lock (sync)
@@ -1189,7 +1244,7 @@ namespace KeyJaya
 
                     if (field == null)
                         return;
-                    SafeEdit.CaretTarget target = null;
+                    SafeEdit.CaretTarget target = selectedWord;
                     string known;
                     SafeEdit priorAnchor;
                     lock (sync)
@@ -1198,7 +1253,7 @@ namespace KeyJaya
                         priorAnchor = wordUndoAnchor;
                     }
 
-                    if (known != null && priorAnchor != null && RichClipboardTarget(owner))
+                    if (target == null && known != null && priorAnchor != null && RichClipboardTarget(owner))
                     {
                         target = priorAnchor.ReadReplacementCaret(known);
                         Diagnostic("rich cycle anchored=" + (target != null));
@@ -1214,7 +1269,7 @@ namespace KeyJaya
                             physical = caretPhysicalGeneration == generation;
                         }
 
-                        target = SafeEdit.ReadCaret(owner, false);
+                        target = i == 0 && excelCaret != null ? excelCaret : SafeEdit.ReadCaret(owner, false);
                         if (target != null && target.Edit != null && (!physical || CaretWords.MatchesPhysical(target.Text, target.Edit.CaretOffset, target.Edit.CaretTail, last)))
                             break;
                         target = null;
@@ -1227,7 +1282,7 @@ namespace KeyJaya
                         return;
                     }
 
-                    string mode = target.Edit.SelectionEncoding(fontEncoding, encodingSettings, core);
+                    string mode = selectedWordMode ?? target.Edit.SelectionEncoding(fontEncoding, encodingSettings, core);
                     if (mode == null)
                     {
                         Diagnostic("word encoding unavailable");
@@ -1238,6 +1293,9 @@ namespace KeyJaya
                         Diagnostic("markdown word discovered characters=" + target.Text.Length + " wrapped=" + (SafeEdit.MarkdownWord(target.Text) != target.Text) + " offset=" + target.Edit.CaretOffset);
                     string next;
                     bool repeat;
+                    int originalFormattingIndex = -1;
+                    bool restoreCycleFormatting = false;
+                    bool wordFormatting = formattingSettings.Italicize && WordFormattingSurface(owner, target.Edit) && Core.AutomaticItalicMode(mode);
                     string cycleInput = target.Edit.IsMarkdownSource ? SafeEdit.MarkdownWord(target.Text) : target.Text;
                     string shortOutput = core.CtrlExpansion(cycleInput, mode);
                     bool shortExpansion = shortOutput != null;
@@ -1253,6 +1311,11 @@ namespace KeyJaya
                         }
 
                         repeat = caretWords.Next(target.Text, mode, owner, field, out next);
+                        if (repeat)
+                        {
+                            originalFormattingIndex = caretWords.OriginalFormattingIndex;
+                            restoreCycleFormatting = caretWords.NextIsOriginal;
+                        }
                     }
 
                     if (shortExpansion)
@@ -1275,10 +1338,11 @@ namespace KeyJaya
                     else if (!repeat)
                     {
                         core.FinishSpellingChoice();
-                        var plan = core.PrepareWordConversion(cycleInput, mode, target.Edit.ContextThroughWord());
+                        var plan = wordFormatting ? core.PrepareControlWord(cycleInput, mode, target.Edit.ContextThroughWord()) : core.PrepareWordConversion(cycleInput, mode, target.Edit.ContextThroughWord());
                         choices = plan.Choices;
+                        originalFormattingIndex = plan.OriginalFormattingIndex;
                         if (target.Edit.IsMarkdownSource && formattingSettings.Italicize)
-                            choices = choices.Select(v => v == EncodingMap.Ascii(v) ? v : target.Edit.MarkdownOutput(v, core, mode)).Distinct().ToArray();
+                            choices = choices.Select((v, n) => n == originalFormattingIndex ? target.Text : target.Edit.MarkdownOutput(v, core, mode, null, true)).ToArray();
                         if (choices.Length == 0)
                         {
                             Diagnostic("word has no choices characters=" + target.Text.Length + " offset=" + target.Edit.CaretOffset + " mode=" + mode);
@@ -1286,18 +1350,19 @@ namespace KeyJaya
                         }
 
                         string preserved = encodingChanged ? Core.ReencodeCurrent(cycleInput, mode) : null;
-                        next = preserved != null && choices.Contains(preserved) ? preserved : Core.NextSpelling(target.Text, choices, plan.Contextual);
-                        if (next == target.Text && (!formattingSettings.Italicize || !WordPasteOptions.IsWord(owner) && !target.Edit.UsesNativeReplacement && !target.Edit.IsMarkdownSource && !RichClipboardTarget(owner) || core.ItalicWords(next, mode).Length == 0))
+                        next = preserved != null && choices.Contains(preserved) ? preserved : originalFormattingIndex >= 0 && plan.Text == cycleInput ? choices[0] : Core.NextSpelling(target.Text, choices, plan.Contextual);
+                        if (next == target.Text && (!wordFormatting || core.ControlItalics(cycleInput, next, mode, true, target.Edit.ContextThroughWord()).Length == 0))
                             return;
                     }
 
-                    if (WordPasteOptions.IsWord(owner) && !WordPasteGuard.Settled(WordPasteOptions.DocumentFocused(owner), WordPasteOptions.FocusedMenu(owner)))
+                    if (WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner) && !WordPasteGuard.Settled(WordPasteOptions.DocumentFocused(owner), WordPasteOptions.FocusedMenu(owner)))
                     {
                         Diagnostic("word popup reacquired focus");
                         return;
                     }
 
                     edit = target.Edit;
+                    bool? originalItalic = WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner) ? null : edit.InitialItalic;
                     ManualTarget(edit);
                     Func<bool> wordContext = () =>
                     {
@@ -1310,16 +1375,18 @@ namespace KeyJaya
                         return;
                     }
 
-                    ManualSelectionVerified(edit, repeat ? wordUndoFonts : null);
+                    ManualSelectionVerified(edit, repeat ? wordUndoFonts : null, true);
                     if (!repeat)
                         lock (sync)
                             ClearWordUndoFonts();
                     WordSelection.FontSnapshot originalFonts;
                     lock (sync)
                         originalFonts = wordUndoFonts;
-                    bool restoringOrigin = repeat && originalFonts != null && next == originalFonts.Original;
+                    bool restoringOrigin = repeat && (originalFormattingIndex >= 0 ? restoreCycleFormatting : originalFonts != null && next == originalFonts.Original);
+                    ItalicSpan[] wordItalics = restoringOrigin ? null : formattingSettings.Italicize ? core.ControlItalics(cycleInput, next, mode, true, edit.ContextThroughWord()) : null;
                     bool wordHandled;
-                    inserted = scriptureExpansion ? WordSelection.ReplaceExpansion(owner, target.Text, next, wordContext, out wordHandled, formattingSettings.Italicize ? core.CtrlItalics(cycleInput, next, mode) : null, false, manualInputActive ? manualWordAnchor : null) : WordSelection.Replace(owner, target.Text, next, wordContext, out wordHandled, restoringOrigin ? null : formattingSettings.Italicize ? core.CtrlItalics(cycleInput, next, mode) : null, false, restoringOrigin ? null : edit.BalaramWordFont, restoringOrigin ? originalFonts : null, !repeat && !shortExpansion ? (Action<WordSelection.FontSnapshot>)(snapshot =>
+                    Action<WordSelection.ReplayAnchor> captureReplay = manualInputActive ? (Action<WordSelection.ReplayAnchor>)(anchor => manualWordAnchor = anchor) : null;
+                    inserted = scriptureExpansion ? WordSelection.ReplaceExpansion(owner, target.Text, next, wordContext, out wordHandled, formattingSettings.Italicize ? core.CtrlItalics(cycleInput, next, mode) : null, retainWordSelection, manualInputActive ? manualWordAnchor : null, captureReplay) : WordSelection.Replace(owner, target.Text, next, wordContext, out wordHandled, wordItalics, retainWordSelection, restoringOrigin ? null : edit.BalaramWordFont, restoringOrigin ? originalFonts : null, !repeat && !shortExpansion ? (Action<WordSelection.FontSnapshot>)(snapshot =>
                     {
                         lock (sync)
                         {
@@ -1334,9 +1401,9 @@ namespace KeyJaya
                             fontExpiry.Stop();
                             fontExpiry.Start();
                         }));
-                    }) : null, restoringOrigin ? null : core.CompoundFontSpans(target.Text, next, mode), manualInputActive ? manualWordAnchor : null);
+                    }) : null, restoringOrigin ? null : core.CompoundFontSpans(target.Text, next, mode), manualInputActive ? manualWordAnchor : null, repeat ? originalFonts : null, captureReplay);
                     if (!wordHandled)
-                        inserted = ReplaceRichCaret(edit, next, mode, wordContext);
+                        inserted = ReplaceRichCaret(edit, next, mode, wordContext, null, !shortExpansion, restoringOrigin, retainWordSelection);
                     if (!inserted)
                         return;
                     encodingChanged = false;
@@ -1352,8 +1419,15 @@ namespace KeyJaya
                         }
                     }));
                     int desired = scriptureExpansion ? next.Length + edit.CaretTail.Length : shortExpansion ? next.Length + edit.CaretTail.Length : CaretWords.ReplacementOffset(edit.CaretOffset, target.Text.Length, next.Length);
-                    ManualCommitted(edit, next);
-                    if (!edit.PositionAfterReplacement(next, desired, wordContext))
+                    ManualCommitted(edit, next, retainWordSelection);
+                    if (retainWordSelection && !wordHandled)
+                    {
+                        var retained = edit.RetainReplacement(next, wordContext);
+                        if (retained != null)
+                            ManualCommitted(retained, next, true);
+                    }
+
+                    if (!retainWordSelection && !edit.PositionAfterReplacement(next, desired, wordContext))
                         Diagnostic("converted word caret position could not be restored");
                     lock (sync)
                     {
@@ -1364,7 +1438,7 @@ namespace KeyJaya
                         letters.Clear();
                         clipboardCycle.Clear();
                         letterUndo = false;
-                        wordUndo = !shortExpansion && (next != original || repeat || WordPasteOptions.IsWord(owner) && wordUndoFonts != null);
+                        wordUndo = !retainWordSelection && !shortExpansion && (next != original || repeat || WordPasteOptions.IsWord(owner) && wordUndoFonts != null);
                         wordUndoOffset = originalOffset;
                         if (!repeat)
                             wordUndoAnchor = edit;
@@ -1384,7 +1458,7 @@ namespace KeyJaya
                             if (repeat)
                                 caretWords.Commit(next);
                             else
-                                caretWords.Start(next, choices, mode, owner, field, target.Text);
+                                caretWords.Start(next, choices, mode, owner, field, target.Text, originalFormattingIndex);
                         }
                     }
                 }
@@ -1416,23 +1490,25 @@ namespace KeyJaya
         // Called by caret discovery's worker. Clipboard API capture/restore stays on the UI STA.
         // Direct input handles only short unformatted text. Multiline/long/rich
         // output uses a temporary clipboard payload, content proof, then restoration.
-        bool ReplaceRichCaret(SafeEdit edit, string output, string mode, Func<bool> context)
+        bool ReplaceRichCaret(SafeEdit edit, string output, string mode, Func<bool> context, string trigger = null, bool individual = false, bool restoring = false, bool retain = false)
         {
             if (edit.UsesNativeReplacement)
             {
                 SafeEdit origin = null;
                 lock (sync)
                 {
-                    if (caretWords.Original == output)
+                    if (restoring || !individual && caretWords.Original == output)
                         origin = wordUndoAnchor;
                 }
 
-                return context() && edit.ReplaceInDesign(output, false, origin != null ? null : formattingSettings.Italicize ? core.CtrlItalics(SafeEdit.MarkdownWord(edit.Expected), output, mode) : null, origin);
+                return context() && edit.ReplaceInDesign(output, retain, origin != null ? null : formattingSettings.Italicize ? core.ControlItalics(SafeEdit.MarkdownWord(edit.Expected), output, mode, individual) : null, origin);
             }
 
             if (!edit.MarkdownAllowed)
                 return false;
-            byte[] html = ConversionHtml(edit.Window, output, mode, Core.CtrlScriptureTrigger(SafeEdit.MarkdownWord(edit.Expected), mode));
+            byte[] html = ConversionHtml(edit.Window, output, mode, trigger ?? Core.CtrlScriptureTrigger(SafeEdit.MarkdownWord(edit.Expected), mode), individual);
+            if (restoring && !edit.IsMarkdownSource && RichClipboardTarget(edit.Window))
+                html = RichClipboard.Html(output, new[] { new ItalicSpan(0, output.Length, true, wordUndoAnchor != null && wordUndoAnchor.InitialItalic == true) });
             if (!Native.TextNeedsClipboard(output, html != null))
                 return context() && edit.ExactSelection() && Native.TypeText(output);
             Diagnostic("caret replacement uses clipboard characters=" + output.Length + " formatted=" + (html != null));
@@ -2052,7 +2128,7 @@ namespace KeyJaya
 
                         ManualSelectionVerified(edit, wordUndoFonts);
                         bool replaced;
-                        if (WordPasteOptions.IsWord(owner))
+                        if (WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner))
                         {
                             WordSelection.FontSnapshot fonts;
                             lock (sync)
@@ -2191,6 +2267,8 @@ namespace KeyJaya
         {
             try
             {
+                if (WordCommentFocus.IsCommentFocus(owner))
+                    return true;
                 uint pid;
                 Native.GetWindowThreadProcessId(owner, out pid);
                 return new[]
@@ -2210,16 +2288,26 @@ namespace KeyJaya
             }
         }
 
-        byte[] ConversionHtml(IntPtr owner, string text, string mode, string trigger = null)
+        static bool WordFormattingSurface(IntPtr owner, SafeEdit edit)
         {
+            return !WordCommentFocus.IsCommentFocus(owner) && (WordPasteOptions.IsWord(owner) || edit.SupportsNativeItalics || edit.IsMarkdownSource && edit.MarkdownAllowed || RichClipboardTarget(owner));
+        }
+
+        byte[] ConversionHtml(IntPtr owner, string text, string mode, string trigger = null, bool individual = false)
+        {
+            // Modern drafts inherit the editor's current formatting. Rich paste
+            // changes its insertion style and cannot share Word's native undo record.
+            if (WordCommentFocus.IsCommentFocus(owner))
+                return null;
             if (!formattingSettings.Italicize || mode == null || !RichClipboardTarget(owner))
                 return null;
-            ItalicSpan[] spans = trigger == null ? core.ItalicWords(text, mode) : core.TriggerItalics(trigger, text, mode);
+            ItalicSpan[] spans = trigger == null ? core.ControlItalics(null, text, mode, individual) : core.TriggerItalics(trigger, text, mode);
             return spans.Length == 0 ? null : RichClipboard.Html(text, spans);
         }
 
         void ConvertSelected(SafeEdit edit, string mode, bool fromItrans, bool fromBalaram, bool cycleWord = false, string forcedOutput = null, bool restoring = false)
         {
+            edit.ExpandSelectedMarkdown();
             IntPtr owner = edit.Window;
             int[] field = FocusId();
             long generation;
@@ -2256,6 +2344,7 @@ namespace KeyJaya
                 {
                     core.FinishOtherOccurrence(edit.OccurrenceKey());
                     string semanticInput = edit.IsMarkdownSource ? SafeEdit.MarkdownWord(input) : input;
+                    bool individualWord = Core.SingleControlWord(semanticInput) && core.CtrlExpansion(semanticInput, mode) == null;
                     string source = fromItrans ? "itrans" : fromBalaram ? "balaram" : "auto";
                     ItalicSpan[] fontItalic = null;
                     string output = mode == "font-auto" ? edit.FontAutoOutput(core, fontEncoding, out fontItalic, cycleWord) : edit.MarkdownConvert(input, v => core.ConvertSource(v, mode, source));
@@ -2280,7 +2369,7 @@ namespace KeyJaya
                         choices = new string[0];
                     }
                     else if (edit.IsMarkdownSource && formattingSettings.Italicize && mode != "font-auto")
-                        output = edit.MarkdownOutput(output, core, mode);
+                        output = edit.MarkdownOutput(output, core, mode, null, individualWord);
                     if (!WaitModifiers(generation))
                     {
                         Diagnostic("selection modifiers/context cancelled");
@@ -2294,18 +2383,18 @@ namespace KeyJaya
                         bool pending = false;
                         try
                         {
-                            if (!edit.OwnExistingSelection(context) || !SelectionConversion.ValidText(output))
+                            if (edit.ExpandedMarkdownSelection && !edit.Select(context) || !edit.OwnExistingSelection(context) || !SelectionConversion.ValidText(output))
                             {
                                 Diagnostic("selection ownership rejected context=" + context());
                                 return;
                             }
 
                             Diagnostic("selection ownership verified");
-                            ManualSelectionVerified(edit);
-                            ItalicSpan[] italicSpans = !restoring && formattingSettings.Italicize && (WordPasteOptions.IsWord(owner) || edit.UsesNativeReplacement) ? core.CtrlItalics(cycleWord ? semanticInput : null, output, mode) : null;
-                            if (mode == "font-auto" && !restoring && formattingSettings.Italicize)
+                            ManualSelectionVerified(edit, null, true);
+                            ItalicSpan[] italicSpans = !restoring && formattingSettings.Italicize && WordFormattingSurface(owner, edit) ? core.ControlItalics(cycleWord ? semanticInput : null, output, mode, individualWord) : null;
+                            if (mode == "font-auto" && !restoring && formattingSettings.Italicize && WordFormattingSurface(owner, edit))
                                 italicSpans = fontItalic;
-                            byte[] html = restoring ? null : ConversionHtml(owner, output, mode, cycleWord ? Core.CtrlScriptureTrigger(semanticInput, mode) : null);
+                            byte[] html = restoring ? null : ConversionHtml(owner, output, mode, cycleWord ? Core.CtrlScriptureTrigger(semanticInput, mode) : null, individualWord);
                             if (output == input && (italicSpans == null || italicSpans.Length == 0) && html == null)
                                 return;
                             string baseline = WordPasteOptions.IsWord(owner) || edit.IsExcelCell ? "" : Clipboard.ContainsText() ? Clipboard.GetText(TextDataFormat.UnicodeText) : "";
@@ -2341,7 +2430,7 @@ namespace KeyJaya
                                         return;
                                     selectedCycleEdit = retained;
                                     selectedCtrlMode = cycleWord ? mode : null;
-                                    if (!restoring && !WordPasteOptions.IsWord(owner) && !edit.UsesNativeReplacement)
+                                    if (!restoring && (!WordPasteOptions.IsWord(owner) || WordCommentFocus.IsCommentFocus(owner)) && !edit.UsesNativeReplacement)
                                     {
                                         selectionUndoEdit = retained;
                                         selectionUndoOriginal = input;
@@ -2364,7 +2453,8 @@ namespace KeyJaya
 
                             bool wordHandled;
                             bool scriptureExpansion = cycleWord && Core.IsScriptureReference(semanticInput) && output != input;
-                            bool wordReplaced = scriptureExpansion ? WordSelection.ReplaceExpansion(owner, input, output, context, out wordHandled, italicSpans, true, manualInputActive ? manualWordAnchor : null) : WordSelection.Replace(owner, input, output, context, out wordHandled, italicSpans, true, mode == "balaram" ? edit.BalaramWordFont : null, null, null, core.CompoundFontSpans(input, output, mode), manualInputActive ? manualWordAnchor : null);
+                            Action<WordSelection.ReplayAnchor> captureReplay = manualInputActive ? (Action<WordSelection.ReplayAnchor>)(anchor => manualWordAnchor = anchor) : null;
+                            bool wordReplaced = scriptureExpansion ? WordSelection.ReplaceExpansion(owner, input, output, context, out wordHandled, italicSpans, true, manualInputActive ? manualWordAnchor : null, captureReplay) : WordSelection.Replace(owner, input, output, context, out wordHandled, italicSpans, true, mode == "balaram" ? edit.BalaramWordFont : null, null, null, core.CompoundFontSpans(input, output, mode), manualInputActive ? manualWordAnchor : null, null, captureReplay);
                             if (wordReplaced)
                             {
                                 Diagnostic("Word selection committed");
@@ -2527,40 +2617,55 @@ namespace KeyJaya
                 {
                     if (!current())
                         return;
-                    previousSelection = SafeEdit.ReadSelected(owner, out selectionSeen);
+                    // Modern comments have their own UIA caret/selection proof
+                    // in DiscoverWord. Native-body paste-menu preparation would
+                    // repeat that discovery and wait twice for unrelated UI.
+                    bool comment = caret && WordCommentFocus.IsCommentFocus(owner);
+                    if (!comment)
+                        previousSelection = SafeEdit.ReadSelected(owner, out selectionSeen);
                     if (!current())
                         return;
                     if (!WaitModifiers(stamp) || !current())
                         return;
-                    Thread.Sleep(40);
-                    if (!current())
-                        return;
-                    bool pasted;
-                    lock (sync)
-                        pasted = wordPasteContext.Verified(owner, Native.GetClipboardSequenceNumber());
-                    bool menu = WordPasteOptions.FocusedMenu(owner);
-                    if (menu || pasted)
+                    if (!comment)
                     {
+                        Thread.Sleep(40);
+                        if (!current())
+                            return;
+                        bool pasted;
                         lock (sync)
-                            dismissingWordPaste = owner;
-                        try
-                        {
-                            if (!WordPasteRecovery.Dismiss(current, () => WordPasteOptions.FocusedMenu(owner), () => WordPasteOptions.DocumentFocused(owner), () => Native.Escape(), ms => Thread.Sleep(ms), pasted))
-                            {
-                                Diagnostic("shortcut paste recovery failed");
-                                return;
-                            }
-                        }
-                        finally
+                            pasted = wordPasteContext.Verified(owner, Native.GetClipboardSequenceNumber());
+                        bool menu = WordPasteOptions.FocusedMenu(owner);
+                        if (menu || pasted)
                         {
                             lock (sync)
-                                dismissingWordPaste = IntPtr.Zero;
+                                dismissingWordPaste = owner;
+                            try
+                            {
+                                if (!WordPasteRecovery.Dismiss(current, () => WordPasteOptions.FocusedMenu(owner), () => WordPasteOptions.DocumentFocused(owner), () => Native.Escape(), ms => Thread.Sleep(ms), pasted))
+                                {
+                                    Diagnostic("shortcut paste recovery failed");
+                                    return;
+                                }
+
+                                // A popup can hide the selection provider. Keep
+                                // positive selection evidence for ExactSelection;
+                                // refresh an absent observation after recovery.
+                                if (caret && !selectionSeen)
+                                    previousSelection = SafeEdit.ReadSelected(owner, out selectionSeen);
+                            }
+                            finally
+                            {
+                                lock (sync)
+                                    dismissingWordPaste = IntPtr.Zero;
+                            }
                         }
+
+                        if (!current() || !WordPasteGuard.Settled(WordPasteOptions.DocumentFocused(owner), WordPasteOptions.FocusedMenu(owner)))
+                            return;
                     }
 
-                    if (!current() || !WordPasteGuard.Settled(WordPasteOptions.DocumentFocused(owner), WordPasteOptions.FocusedMenu(owner)))
-                        return;
-                    Diagnostic("shortcut document settled");
+                    Diagnostic(comment ? "shortcut comment editor ready" : "shortcut document settled");
                     BeginInvoke((Action)(() =>
                     {
                         if (!current() || selectionSeen && (previousSelection == null || !previousSelection.ExactSelection()))
@@ -2578,7 +2683,7 @@ namespace KeyJaya
                         }
 
                         if (caret)
-                            DiscoverWord(owner);
+                            DiscoverWord(owner, comment ? null : new PreparedWordDiscovery(owner, stamp, previousSelection, selectionSeen));
                         else
                             ConvertClipboard(mode);
                         if (!busy)
@@ -2617,10 +2722,7 @@ namespace KeyJaya
                 SafeEdit target = null;
                 try
                 {
-                    bool present;
-                    target = SafeEdit.ReadSelected(owner, out present);
-                    if (!present)
-                        target = SafeEdit.InsertionAnchor(owner);
+                    target = SafeEdit.ReadExcelInsertionOrSelection(() => ExcelCellField.Capture(owner));
                 }
                 catch (Exception ex)
                 {
@@ -2922,6 +3024,19 @@ namespace KeyJaya
                 if (singleLetter)
                 {
                     committed = Native.TypeCharacter(value);
+                    return committed;
+                }
+
+                if (edit != null && WordCommentFocus.IsCommentFocus(edit.Window))
+                {
+                    long stamp;
+                    lock (sync)
+                        stamp = state.Generation;
+                    committed = ReplaceRichCaret(edit, value, conversionMode, () =>
+                    {
+                        lock (sync)
+                            return state.Generation == stamp && !state.Paused && edit.Window == Native.GetForegroundWindow();
+                    }, trigger);
                     return committed;
                 }
 
@@ -3375,6 +3490,13 @@ namespace KeyJaya
                 Close();
         }
 
+        internal static bool ReferenceSurface(uint ownerProcess, uint residentProcess, string caption, string kind)
+        {
+            // All resident dialogs, including new editors and message boxes,
+            // must receive literal typing. The cheat sheet has its own process.
+            return ownerProcess != 0 && ownerProcess == residentProcess || caption == "KeyJaya cheat sheet" && kind != null && kind.StartsWith("WindowsForms", StringComparison.Ordinal);
+        }
+
         bool IsReferenceWindow(IntPtr owner)
         {
             if (owner == referenceOwner)
@@ -3384,7 +3506,9 @@ namespace KeyJaya
             var kind = new StringBuilder(100);
             Native.GetWindowText(owner, caption, caption.Capacity);
             Native.GetClassName(owner, kind, kind.Capacity);
-            referenceWindow = (caption.ToString() == "KeyJaya cheat sheet" || caption.ToString() == "KeyJaya shortcuts" || caption.ToString() == "KeyJaya triggers" || caption.ToString() == "KeyJaya trigger") && kind.ToString().StartsWith("WindowsForms", StringComparison.Ordinal);
+            uint process;
+            Native.GetWindowThreadProcessId(owner, out process);
+            referenceWindow = ReferenceSurface(process, (uint)Process.GetCurrentProcess().Id, caption.ToString(), kind.ToString());
             return referenceWindow;
         }
 
@@ -3565,6 +3689,8 @@ namespace KeyJaya
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            if (wordCommentFocus != null)
+                wordCommentFocus.Dispose();
             if (manualWordAnchor != null)
                 manualWordAnchor.FinishRecord();
             manualRetry.Dispose();

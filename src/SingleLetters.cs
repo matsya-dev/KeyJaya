@@ -306,9 +306,9 @@ namespace KeyJaya
             return windowClass == "OpusApp" && ownerProcess != 0 && ownerProcess == (uint)focusedProcess;
         }
 
-        public static bool DocumentNode(string automationId, bool document, bool menu)
+        public static bool DocumentNode(string automationId, bool document, bool menu, string nativeClass = null, bool editable = false)
         {
-            return !menu && (automationId == "Body" || document);
+            return !menu && (automationId == "Body" || document || nativeClass == "_WwG" && editable);
         }
 
         public static bool KeepFocusTransition(bool sameOwner, bool pending, bool document, bool pasteMenu)
@@ -712,6 +712,15 @@ namespace KeyJaya
     public sealed class CaretWordCycle
     {
         public string Original { get; private set; }
+        public int OriginalFormattingIndex { get; private set; }
+
+        public bool NextIsOriginal
+        {
+            get
+            {
+                return choices != null && OriginalFormattingIndex >= 0 && (index + 1) % choices.Length == OriginalFormattingIndex;
+            }
+        }
 
         string current, mode;
         string[] choices;
@@ -724,6 +733,7 @@ namespace KeyJaya
             choices = null;
             focus = null;
             Original = null;
+            OriginalFormattingIndex = -1;
         }
 
         public string Expected(IntPtr window, int[] field)
@@ -744,7 +754,7 @@ namespace KeyJaya
             return true;
         }
 
-        public void Start(string output, string[] variants, string format, IntPtr window, int[] field, string original = null)
+        public void Start(string output, string[] variants, string format, IntPtr window, int[] field, string original = null, int originalFormattingIndex = -1)
         {
             Clear();
             if (variants == null || variants.Length < 1 || field == null || field.Length == 0)
@@ -753,6 +763,7 @@ namespace KeyJaya
             if (found < 0)
                 return;
             Original = original ?? output;
+            OriginalFormattingIndex = originalFormattingIndex >= 0 && originalFormattingIndex < variants.Length ? originalFormattingIndex : -1;
             current = output;
             choices = (string[])variants.Clone();
             index = found;

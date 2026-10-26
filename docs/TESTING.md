@@ -15,6 +15,32 @@ fixtures live beneath ignored `out/python-tests` and are removed after each test
 The optimized-code check verifies that path guards remain active when assertions
 are disabled. This set supplements the 44 C# suites and is included in CI.
 
+`TriggerEditorTests` checks that all resident editors and message boxes bypass conversion by
+process ownership, keeping ordinary typing literal even when dialog titles change.
+`ShortcutSettingsTests` exercises the Word shortcut reader through a getter-only
+fake object model, including modifier mapping, the original navigation conflict,
+normal/disabled/unassigned/prefix bindings, current proposed shortcuts, ownership
+changes and release after a failed read. Disposable helper processes additionally
+prove report decoding, malformed-output rejection and the five-second timeout.
+Neither fixture controls Word or sends desktop input. These contracts remain
+within the existing 44-suite registry.
+The menu fixtures verify that the removed spelling editor and standalone Word
+overlap actions stay absent while shortcut-window inspection remains available.
+
+`BookStyleTests` also runs the Ctrl-italics contracts: unchanged spellings first,
+plural forms, individual loanword overrides, explicit passage regularization,
+proper names, whole compounds, English protection, distinct formatting cycle
+positions, HTML and protected Markdown. `FontAutoSelectionTests` includes a
+mixed-font passage whose unchanged terms require both italic and regular spans.
+These fixtures exercise production policy and cycle code without typing into an
+editor. Native undo and visible formatting still require user-led scratch checks.
+
+The Word transaction-reuse fixture in `WordSnapshotTests` counts calls to a fake
+range and fails on a duplicate text/revision read. It exercises production replay
+capture and font restoration, including matching/stale font tickets, tracked
+deletions, paragraph markers, provider failure, cancellation and one undo record.
+It never connects to Word or sends desktop input.
+
 Formatting and module-boundary guidance is in
 [Contributing](../CONTRIBUTING.md) and [the code map](ARCHITECTURE.md).
 The selection suite now includes the shared six-profile editor contract matrix.
@@ -22,6 +48,26 @@ The selection suite now includes the shared six-profile editor contract matrix.
 including multiple instances, wrong window/process, stale global registration,
 fallback and COM-reference ownership. Those tests use fake applications and do
 not open or read native Word documents.
+The same suite runs the resident's real font-ticket cleanup against a deliberately
+stalled release backend on a separate STA caller. Navigation must return without
+waiting for that backend, while the old ticket loses ownership immediately and
+active leases release exactly once. `ReplayTests` also covers 256 Ctrl+Shift
+navigation chords: both modifier sides/orders, arrows/Home/End/Page Up/Page Down,
+autorepeat and both release orders. It checks FIFO order and extended-key flags
+without sending input to Windows.
+`ExcelCellTests` includes the real adapter's transaction methods against an
+independent field backend. LF/CRLF selection, retention, punctuation, original
+caret restoration, Enter/Edit transitions, stale reads, cancellation, ignored
+selection and formula-output refusal are exercised without native input. The
+one-pass discovery fixture checks that a failed capture stays ambiguous rather
+than becoming a usable blank caret. These checks establish code contracts;
+they do not establish every Excel provider's native cursor semantics.
+The fixture also runs actual highlighted conversion across LF/CRLF passages,
+models balanced Alt+Enter insertion, preserves nearby emoji/combining sequences,
+and checks short relative travel inside long cells. Single-line Devanagari,
+Bengali, ITRANS and plain-output regressions retain their established fallback.
+Native retained selection and one-step undo were separately confirmed by the
+user in a disposable Excel cell.
 `StandaloneTests` checks the source-only distribution policy and reversible
 retirement in disposable directories, including own-license retention, unchanged
 user configuration and complete rollback. It locks each obsolete file in turn,
@@ -129,6 +175,16 @@ actual Word window closes. Queue events are constructed and inspected for FIFO
 ordering and paired modifier release; they are **not replayed into Windows**.
 This supplements the fake-application binding tests rather than replacing them.
 
+The same native test creates a real comment and threaded reply in its scratch
+document. It checks their focus recognition, word and letter conversion,
+abbreviation expansion, Unicode and ScaGoudy/Balarama output, cycling and original
+font restoration, one-step undo, deferred undo/typing continuation and rejection
+of expired or neighboring targets. Body text and the other comment/reply are
+checked throughout. Draft and Print Layout fixtures explicitly activate their
+owned comment editor; selecting a COM range in a hidden pane alone is not a
+valid typing-focus fixture. UIA discovery is given the same bounded settling
+window used by the resident. No keys are injected.
+
 The optional physical mode waits up to ten minutes for a real Left Ctrl tap in
 its own scratch document, then pauses that Word server while the person immediately
 types ` next Word`. The existing running resident performs conversion; the helper
@@ -141,6 +197,29 @@ real typing during a bounded stall only. Desktop Word is not installed on the no
 is deliberately excluded from the noninteractive 44-suite registry and CI.
 
 ## Physical release checks
+
+### Optional Modern Comments integration
+
+```powershell
+./tools/test_word_modern.ps1                # compile only
+./tools/test_word_modern.ps1 -AllowDesktop
+```
+
+This separate opt-in fixture requires a current, hash-matching development
+resident running with `--diagnostic`, Modern Comments enabled, and Word's English
+Comments button label. It creates a new exclusively owned Word process and local
+scratch document. It checks contextual and panel views, new comments and replies,
+word/letter/abbreviation/selected conversion, one-step undo, unchanged body text
+and ordinary English continuation with the editor's existing formatting.
+
+Only its own verified comment editor receives fixture input. The resident's
+normal Windows shortcut dispatch is used; injected-key filtering is not relaxed.
+The diagnostic queue probe waits for selection retention and held input to settle
+before assertions. This verifies the live editing path, not physical Ctrl-tap
+recognition or hardware delivery timing. It does not open existing documents,
+change the installed configuration, build an installer or publish anything.
+
+### Physical editor checks
 
 Use separate disposable documents and a scratch browser editor. Check:
 
@@ -162,6 +241,10 @@ Use separate disposable documents and a scratch browser editor. Check:
    Repeat with Track Changes and each encoding. Missing ranges must stay unchanged.
 10. Cycle `Krishna` and `Rama` through multiple complete loops, then Backspace:
     restore the original spelling and formatting, preserving neighboring text.
+11. In a new Word comment and a reply, check letter/word cycles, abbreviation
+    expansion, selected conversion, one-step undo and immediate English typing.
+    Repeat with Unicode and ScaGoudy/Balarama in the comment pane and Print Layout.
+    Verify the document body and neighboring comments/replies remain unchanged.
 
 Never use an existing working manuscript as a disposable fixture. Sleep/wake and
 Windows sign-in tests are separate from the noninteractive suite.

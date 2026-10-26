@@ -33,6 +33,8 @@ namespace KeyJaya
             string root = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)).FullName;
             if (args.Length > 1 && args[0] == "--root")
                 root = Path.GetFullPath(args[1]);
+            if (args.Length > 0 && args[0] == "--check-word-shortcuts")
+                return WordShortcutInspector.WriteReport();
             if (args.Length > 0 && args[0] == "--version")
             {
                 Console.WriteLine(Version.Current);

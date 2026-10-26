@@ -67,11 +67,22 @@ namespace KeyJaya
         static IntPtr mirrorOwner, modeOwner;
         static AutomationElement mirrorElement, modeElement;
         static TextPattern mirror;
-        sealed class CellState
+        internal sealed class CellState
         {
             public string Text;
             public int Start, End;
             public string Mode;
+        }
+
+        // Native capture uses the default backend. Tests can exercise the same
+        // transaction against a field model without sending desktop input.
+        internal interface ICellBackend
+        {
+            bool Current { get; }
+
+            bool Read(bool includeMode, out CellState state);
+            bool Send(Native.Input[] keys);
+            bool EnterEdit();
         }
 
         public static Action<string> Trace;
@@ -114,14 +125,33 @@ namespace KeyJaya
             return Editor(owner) != IntPtr.Zero;
         }
 
+        static CacheRequest MirrorProperties()
+        {
+            var request = new CacheRequest
+            {
+                TreeScope = TreeScope.Element
+            };
+            request.Add(AutomationElement.ProcessIdProperty);
+            request.Add(AutomationElement.AutomationIdProperty);
+            request.Add(AutomationElement.ControlTypeProperty);
+            request.Add(TextPattern.Pattern);
+            return request;
+        }
+
         static TextPattern Mirror(IntPtr owner)
         {
             uint pid;
             Native.GetWindowThreadProcessId(owner, out pid);
             try
             {
-                if (mirrorOwner == owner && mirrorElement != null && mirrorElement.Current.ProcessId == pid && mirrorElement.Current.AutomationId == "FormulaBar")
-                    return mirror;
+                if (mirrorOwner == owner && mirrorElement != null)
+                {
+                    var current = mirrorElement.GetUpdatedCache(MirrorProperties());
+                    var info = current.Cached;
+                    object pattern;
+                    if (info.ProcessId == pid && info.AutomationId == "FormulaBar" && info.ControlType == ControlType.Edit && current.TryGetCachedPattern(TextPattern.Pattern, out pattern))
+                        return mirror = (TextPattern)pattern;
+                }
             }
             catch
             {
@@ -142,13 +172,15 @@ namespace KeyJaya
                 return null;
             }
 
-            if (field.Current.ProcessId != pid || field.Current.ControlType != ControlType.Edit)
+            var cached = field.GetUpdatedCache(MirrorProperties());
+            var properties = cached.Cached;
+            if (properties.ProcessId != pid || properties.AutomationId != "FormulaBar" || properties.ControlType != ControlType.Edit)
             {
                 Note("Formula Bar identity rejected");
                 return null;
             }
 
-            if (!field.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+            if (!cached.TryGetCachedPattern(TextPattern.Pattern, out provider))
             {
                 Note("Formula Bar has no TextPattern");
                 return null;
@@ -162,7 +194,33 @@ namespace KeyJaya
 
         internal static bool TextBuffer(string value)
         {
-            return value != null && value.Length <= 4096 && value.IndexOfAny(new[] { '\0', '\r', '\n', '\t' }) < 0 && !value.StartsWith("=", StringComparison.Ordinal) && !value.StartsWith("+", StringComparison.Ordinal) && !value.StartsWith("-", StringComparison.Ordinal) && !value.StartsWith("@", StringComparison.Ordinal);
+            if (value == null || value.Length > 4096 || value.StartsWith("=", StringComparison.Ordinal) || value.StartsWith("+", StringComparison.Ordinal) || value.StartsWith("-", StringComparison.Ordinal) || value.StartsWith("@", StringComparison.Ordinal))
+                return false;
+            for (int n = 0; n < value.Length; n++)
+                if (value[n] == '\r')
+                {
+                    if (n + 1 >= value.Length || value[n + 1] != '\n')
+                        return false;
+                    n++;
+                }
+                else if (value[n] != '\n' && char.IsControl(value[n]))
+                    return false;
+            return true;
+        }
+
+        internal static Native.Input[] SelectionKeys(string text, int fromStart, int fromEnd, int start, int end)
+        {
+            if (!TextBuffer(text) || fromStart < 0 || fromEnd < fromStart || fromEnd > text.Length)
+                return null;
+            var keys = Native.RelativeFieldRangeKeys(text, fromStart, fromEnd, start, end);
+            // Keep the established single-line fallback for script/cluster
+            // ranges. Whole-buffer Home/Shift+End needs no guessed glyph count.
+            if (keys == null && text.IndexOfAny(new[] { '\r', '\n' }) < 0)
+                keys = Native.FieldRangeKeys(start, end, text.Length, false);
+            if (keys != null)
+                for (int n = 0; n < keys.Length; n++)
+                    keys[n].union.keyboard.extra = new UIntPtr(Native.OwnCorrectionInput);
+            return keys;
         }
 
         internal static int CaretPosition(string full, int start, int end, string replacement, string tail, int offset)
@@ -189,16 +247,35 @@ namespace KeyJaya
             return null;
         }
 
-        static string ModeValue(AutomationElement element)
+        static CacheRequest ModeProperties()
         {
-            string name = element.Current.Name;
+            var request = new CacheRequest
+            {
+                TreeScope = TreeScope.Element
+            };
+            request.Add(AutomationElement.ProcessIdProperty);
+            request.Add(AutomationElement.NameProperty);
+            request.Add(AutomationElement.ControlTypeProperty);
+            request.Add(ValuePattern.Pattern);
+            request.Add(ValuePattern.ValueProperty);
+            request.Add(TextPattern.Pattern);
+            return request;
+        }
+
+        static string ModeValue(AutomationElement element, uint process)
+        {
+            var current = element.GetUpdatedCache(ModeProperties());
+            var info = current.Cached;
+            if (info.ProcessId != process || info.ControlType != ControlType.Text)
+                return null;
+            string name = info.Name;
             if (name == null || !name.StartsWith("Cell Mode", StringComparison.Ordinal))
                 return null;
             object provider;
             string value = null;
-            if (element.TryGetCurrentPattern(ValuePattern.Pattern, out provider))
-                value = ((ValuePattern)provider).Current.Value;
-            else if (element.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+            if (current.TryGetCachedPattern(ValuePattern.Pattern, out provider))
+                value = ((ValuePattern)provider).Cached.Value;
+            else if (current.TryGetCachedPattern(TextPattern.Pattern, out provider))
                 value = ((TextPattern)provider).DocumentRange.GetText(32);
             string mode = ModeLabel(name, value);
             if (mode == null)
@@ -212,8 +289,8 @@ namespace KeyJaya
             Native.GetWindowThreadProcessId(owner, out pid);
             try
             {
-                if (modeOwner == owner && modeElement != null && modeElement.Current.ProcessId == pid)
-                    return ModeValue(modeElement);
+                if (modeOwner == owner && modeElement != null)
+                    return ModeValue(modeElement, pid);
             }
             catch
             {
@@ -232,7 +309,7 @@ namespace KeyJaya
                 var type = node.Current.ControlType;
                 if (type == ControlType.Text)
                 {
-                    string mode = ModeValue(node);
+                    string mode = ModeValue(node, pid);
                     if (mode != null)
                     {
                         modeOwner = owner;
@@ -255,6 +332,22 @@ namespace KeyJaya
             return null;
         }
 
+        // A collapsed caret has one endpoint and no selected text. Do not ask
+        // Excel for the same prefix twice; ranges still require both endpoints
+        // and exact selected text. Callbacks let tests count real read decisions.
+        internal static bool ReadOffsets(string value, bool collapsed, Func<int> readStart, Func<int> readEnd, Func<string> readSelected, out int start, out int end)
+        {
+            start = end = -1;
+            if (!TextBuffer(value))
+                return false;
+            int begin = readStart(), stop = collapsed ? begin : readEnd();
+            if (begin < 0 || stop < begin || stop > value.Length || !collapsed && readSelected() != value.Substring(begin, stop - begin))
+                return false;
+            start = begin;
+            end = stop;
+            return true;
+        }
+
         static bool Read(TextPattern pattern, out string text, out int start, out int end)
         {
             text = null;
@@ -275,19 +368,22 @@ namespace KeyJaya
             }
 
             var prefix = document.Clone();
-            prefix.MoveEndpointByRange(TextPatternRangeEndpoint.End, selected[0], TextPatternRangeEndpoint.Start);
-            int begin = prefix.GetText(4097).Length;
-            prefix.MoveEndpointByRange(TextPatternRangeEndpoint.End, selected[0], TextPatternRangeEndpoint.End);
-            int stop = prefix.GetText(4097).Length;
-            if (begin < 0 || stop < begin || stop > value.Length || selected[0].GetText(4097) != value.Substring(begin, stop - begin))
+            bool collapsed = selected[0].CompareEndpoints(TextPatternRangeEndpoint.Start, selected[0], TextPatternRangeEndpoint.End) == 0;
+            if (!ReadOffsets(value, collapsed, () =>
+            {
+                prefix.MoveEndpointByRange(TextPatternRangeEndpoint.End, selected[0], TextPatternRangeEndpoint.Start);
+                return prefix.GetText(4097).Length;
+            }, () =>
+            {
+                prefix.MoveEndpointByRange(TextPatternRangeEndpoint.End, selected[0], TextPatternRangeEndpoint.End);
+                return prefix.GetText(4097).Length;
+            }, () => selected[0].GetText(4097), out start, out end))
             {
                 Note("range rejected");
                 return false;
             }
 
             text = value;
-            start = begin;
-            end = stop;
             return true;
         }
 
@@ -397,6 +493,8 @@ namespace KeyJaya
             public int Start, End, SelectionStart, SelectionEnd;
             internal int OriginalStart, OriginalEnd;
             internal string Tail = "";
+            internal ICellBackend Backend { get; set; }
+
             public string Text
             {
                 get
@@ -409,13 +507,35 @@ namespace KeyJaya
             {
                 get
                 {
-                    return Stamp == epoch && Editor(Owner) == EditorHandle;
+                    return Backend != null ? Backend.Current : Stamp == epoch && Editor(Owner) == EditorHandle;
                 }
             }
 
             public Snapshot Clone()
             {
                 return (Snapshot)MemberwiseClone();
+            }
+
+            bool ReadState(out CellState state, bool mode = false)
+            {
+                state = null;
+                if (!Current)
+                    return false;
+                CellState value;
+                bool read = Backend != null ? Backend.Read(mode, out value) : TryReadCell(Owner, EditorHandle, Stamp, out value, mode);
+                if (!read || value == null || !Current)
+                    return false;
+                state = value;
+                return true;
+            }
+
+            bool Send(Native.Input[] keys)
+            {
+                if (keys == null || !Current)
+                    return false;
+                for (int n = 0; n < keys.Length; n++)
+                    keys[n].union.keyboard.extra = new UIntPtr(Native.OwnCorrectionInput);
+                return Backend != null ? Backend.Send(keys) : Native.ReplayCorrectionInput(keys);
             }
 
             bool At(string text, int start, int end)
@@ -425,7 +545,7 @@ namespace KeyJaya
                     if (!Current)
                         return false;
                     CellState actual;
-                    return TryReadCell(Owner, EditorHandle, Stamp, out actual) && actual.Text == text && actual.Start == start && actual.End == end && Current;
+                    return ReadState(out actual) && actual.Text == text && actual.Start == start && actual.End == end && Current;
                 }
                 catch
                 {
@@ -470,15 +590,15 @@ namespace KeyJaya
             bool EnsureEdit(int begin, int end)
             {
                 CellState actual;
-                if (!Current || !TryReadCell(Owner, EditorHandle, Stamp, out actual, true) || actual.Text != Full || actual.Start != begin || actual.End != end)
+                if (!Current || !ReadState(out actual, true) || actual.Text != Full || actual.Start != begin || actual.End != end)
                     return false;
                 if (actual.Mode == "Edit")
                     return true;
-                if (actual.Mode != "Enter" || !Native.Chord(0x71))
+                if (actual.Mode != "Enter" || !Current || !(Backend != null ? Backend.EnterEdit() : Native.Chord(0x71)))
                     return false;
                 for (int n = 0; n < 25 && Current; n++)
                 {
-                    if (TryReadCell(Owner, EditorHandle, Stamp, out actual, true) && actual.Text == Full && actual.Start == begin && actual.End == end && actual.Mode == "Edit")
+                    if (ReadState(out actual, true) && actual.Text == Full && actual.Start == begin && actual.End == end && actual.Mode == "Edit")
                         return true;
                     Thread.Sleep(5);
                 }
@@ -488,7 +608,8 @@ namespace KeyJaya
 
             public bool Select()
             {
-                if (!EnsureEdit(SelectionStart, SelectionEnd) || !Native.SelectFieldRange(Start, End, Full.Length, false) || !WaitAt(Full, Start, End))
+                var keys = SelectionKeys(Full, SelectionStart, SelectionEnd, Start, End);
+                if (keys == null || !EnsureEdit(SelectionStart, SelectionEnd) || !Send(keys) || !WaitAt(Full, Start, End))
                     return false;
                 SelectionStart = Start;
                 SelectionEnd = End;
@@ -507,7 +628,10 @@ namespace KeyJaya
                 }
 
                 CellState actual;
-                if (!TryReadCell(Owner, EditorHandle, Stamp, out actual) || actual.Text != Full || !EnsureEdit(actual.Start, actual.End) || !Native.SelectFieldRange(OriginalStart, OriginalEnd, Full.Length, false) || !WaitAt(Full, OriginalStart, OriginalEnd))
+                if (!ReadState(out actual) || actual.Text != Full)
+                    return false;
+                var keys = SelectionKeys(Full, actual.Start, actual.End, OriginalStart, OriginalEnd);
+                if (keys == null || !EnsureEdit(actual.Start, actual.End) || !Send(keys) || !WaitAt(Full, OriginalStart, OriginalEnd))
                     return false;
                 SelectionStart = OriginalStart;
                 SelectionEnd = OriginalEnd;
@@ -517,9 +641,10 @@ namespace KeyJaya
             public bool Position(string replacement, int offset)
             {
                 int at = CaretPosition(Full, Start, End, replacement, Tail, offset);
-                if (!Current || at < 0 || !EnsureEdit(SelectionStart, SelectionEnd))
+                var keys = at < 0 ? null : SelectionKeys(Full, SelectionStart, SelectionEnd, at, at);
+                if (!Current || keys == null || !EnsureEdit(SelectionStart, SelectionEnd))
                     return false;
-                if (!Native.SelectFieldRange(at, at, Full.Length, false) || !WaitAt(Full, at, at))
+                if (!Send(keys) || !WaitAt(Full, at, at))
                     return false;
                 SelectionStart = SelectionEnd = at;
                 return true;
@@ -527,24 +652,25 @@ namespace KeyJaya
 
             public bool Replace(string output, bool retain, Func<bool> context)
             {
-                if (string.IsNullOrEmpty(output) || output.Length > 4096 || System.Linq.Enumerable.Any(output, c => char.IsControl(c) || char.IsSurrogate(c)))
+                var keys = Native.ExcelTextKeys(output);
+                if (keys == null)
                     return false;
-                if (!context() || !Matches(false))
+                if (!context())
                     return false;
                 string wanted = Full.Substring(0, Start) + output + Full.Substring(End);
-                if (!TextBuffer(wanted) || !EnsureEdit(Start, End))
+                var retained = SelectionKeys(wanted, Start + output.Length, Start + output.Length, Start, Start + output.Length);
+                // EnsureEdit proves the same full buffer and selected range;
+                // a separate preceding Matches read would duplicate that proof.
+                if (!TextBuffer(wanted) || retained == null || !EnsureEdit(Start, End))
                     return false;
-                var keys = new System.Collections.Generic.List<Native.Input>();
-                foreach (char c in output)
-                    keys.AddRange(Native.UnicodeCharacter(c.ToString()));
-                if (!context() || !Matches(false) || !Native.ReplayCorrectionInput(keys.ToArray()) || !WaitAt(wanted, Start + output.Length, Start + output.Length, context))
+                if (!context() || !Matches(false) || !Send(keys) || !WaitAt(wanted, Start + output.Length, Start + output.Length, context))
                     return false;
                 Full = wanted;
                 End = Start + output.Length;
                 SelectionStart = SelectionEnd = End;
                 if (retain)
                 {
-                    if (!Native.SelectFieldRange(Start, End, Full.Length, false) || !WaitAt(Full, Start, End, context))
+                    if (!context() || !Current || !Send(retained) || !WaitAt(Full, Start, End, context))
                         return false;
                     SelectionStart = Start;
                 }

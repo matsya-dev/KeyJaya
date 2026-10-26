@@ -341,3 +341,498 @@ physical-key results do not establish those missing cases.
 
 Reproduction commands and safeguards are in [Testing](TESTING.md). Local evidence
 is under `out/review-20261026`, `out/setup-transaction` and `out/native-word`.
+
+## Word comments and replies — 26 October 2026
+
+Development from released 1.9.6. The original native reproduction could read and
+select `prasada` in a comment, but focus recognition returned false and native
+replacement was rejected. The comments story (4) was excluded; its writable
+`_WwG` Edit provider also had neither a Body ID nor a Document ancestor.
+
+The native Word path now accepts comments and threaded replies while retaining
+its existing window/process, document, exact-text, formatting, undo and replay
+checks. The additional focus path requires the foreground Word process, the
+native `_WwG` editor and a writable TextPattern selection. It does not admit
+ribbon/search controls, menus or arbitrary Edit fields. No configuration loading,
+trigger defaults, queue ownership or other editor adapter was changed.
+
+Verification: all **44 isolated suites passed, 26,940,793 assertions; zero
+failures**. The comments-story regression failed before the fix. All **26 Python
+tooling tests**, **19 compiled-app checks** and **17 engine benchmarks** passed.
+The highest warm engine p95 was **11.207 ms**, within the 150 ms budget; these
+measure the engine rather than complete editor latency. Development audit,
+pinned Hindi sources, documentation links and formatting checks passed.
+
+The expanded native Word fixture passed **213 checks**. It creates a real comment
+and threaded reply in its exclusively owned scratch document and checks Draft
+and Print Layout comment panes, Unicode and ScaGoudy/Balarama, word/letter edits,
+abbreviation expansion, cycling and original fonts, native undo, continued typing,
+expired context and neighboring-target rejection. Body text and the other
+comment/reply remain unchanged. The fixture must display and activate its own
+comment pane after a view change; a COM selection in a hidden pane does not prove
+typing focus. A separate UI-focused Print Layout reproduction also converted.
+The existing bounded COM-delay, focus-loss rollback and disconnection checks pass.
+Native tests inject no keys. Modern Comments and physical end-to-end hotkey timing
+are not newly verified by this pass.
+
+An application-only development executable was activated with the existing
+installed configuration after a keyboard-idle check and graceful resident close.
+All **41 protected installed configuration/data/asset/executable hashes** remained
+unchanged, as did Windows startup registration. The temporary build's reference
+window reads the same live configuration through a junction beneath ignored
+`out/word-comments`; dictionary/asset copies remain under that temporary root.
+Existing working documents were not read, edited or closed. The installed
+executable, version and accepted 1.9.6 baseline are unchanged. Windows startup
+still launches the released executable. No installer was built or published.
+
+Evidence is under `out/word-comments`: `reproduction.json`,
+`print-conversion.json`, `full44-results.json`, `native-check-6.txt`,
+`native-check-6/editing-trace.txt`, `activation.json` and `verification.json`.
+
+## Modern Comments and conversion delay — 26 October 2026
+
+Modern Word comments use UIA card editors rather than the document's COM
+Selection. Their focus event identifies the real editor even when the global
+focused-element query returns a stale body provider. The adapter checks live
+focus, Word process, card ancestry and the exact owned native host (`_WwG` for
+contextual bubbles; `NetUIHWND` for the Comments panel). Modern text replacements
+retain the draft's existing formatting, and body COM/font operations are excluded.
+
+The user confirmed that conversion now works in the comment fields, then reported
+excessive delay. Earlier native contextual new-comment/reply cases completed;
+the full actual-panel reply fixture was interrupted and is not recorded as a
+complete native pass. This responsiveness pass did not control the desktop or
+open any Word document.
+
+Existing diagnostic samples showed approximately 1.18–1.26 seconds from an
+accepted word shortcut to held-input release. Focus resolution queried the stale
+global provider first, fetched individual ancestry properties repeatedly and
+walked the same comment tree twice. Word shortcuts also repeated native-body
+Paste Options preparation in the modern comment editor.
+
+The development path now resolves the live event editor first, fetches properties
+in a per-call UIA CacheRequest and returns the successful classification to the
+document-focus guard. Modern word shortcuts use their own caret/selection proof
+directly, removing duplicate selection/menu probes and two fixed 40 ms waits.
+Current focus, process, ancestry, native ownership, exact text/ranges, modifier
+release and input-generation checks remain. No ownership or text proof is cached
+between calls.
+
+All **12 targeted isolated suites passed, 1,583,043 assertions; zero failures**.
+WordSnapshotTests includes **103 new provider-model assertions** (593 total in
+that suite) covering zero global-focus fallback calls for repeated valid comment
+resolutions, fresh ancestry on every call, stale focus, changed/mixed processes,
+normal body fallback, missing providers, cycles and the 18-node bound. Selection,
+replay, correction races, native-key contracts, resident replacement, shortcut
+settings, Word ranges/font modes and abbreviation checks passed. All **19
+compiled-app checks**, development audit, documentation-link and C# formatting
+checks passed. The optional modern native fixture compiled without running.
+
+These checks establish the removed work and retained safeguards; they do not
+measure a new live Word end-to-end latency. Release 1.9.6 and its accepted baseline
+are unchanged. No installer was built and nothing was published. Evidence for
+this pass is `out/modern-word-comments/speed-targeted-results.json`.
+
+The optimized application-only build is running from the temporary
+`out/word-comments/resident-comments-speed-1` folder with the existing installed
+configuration. Activation verified the expected prior resident and its hidden
+window/process, modifier release and queue acknowledgement, then requested a
+graceful close and confirmed the new resident window. Active Word editing blocks
+the restart. All **41 protected installed configuration/data/asset/executable
+hashes** and Windows startup registration were unchanged. The installed/startup
+executable remains released 1.9.6; this development activation is temporary.
+The activation record is `out/modern-word-comments/activation.json`.
+
+## Word selection shortcut and offline Excel review — 26 October 2026
+
+The reported Ctrl+Shift+Left problem had a verified Word assignment conflict.
+A read-only query against the application bound to the visible Word frame found
+Ctrl+Shift+Left assigned to `RejectChangesAndAdvance`, Ctrl+Shift+Right to
+`AcceptChangesAndAdvance`, and Ctrl+Left to `RejectChangesSelected`. The modern
+comment editor handles navigation separately, explaining the different behavior.
+The user removed the conflicting assignments. A subsequent read-only query
+confirmed `WordLeftExtend`, `WordRightExtend`, `WordLeft` and unchanged
+Shift+Left `CharLeftExtend`. The agent did not modify or save Word shortcuts,
+templates or documents. The template still reported unsaved changes at that
+check; their persistence remains under Word's normal save lifecycle.
+
+Code review separately found native Word font/document-reference release in the
+low-level keyboard hook when navigation clears the previous conversion ticket.
+A deliberately stalled release backend reproduced that blocking path in the
+resident's actual cleanup method. Cleanup now retires the ticket synchronously
+and releases its detached references on a worker. Active font leases retain
+their references until their existing user releases them; retirement cannot
+authorize another edit. Eight regression assertions cover nonblocking return,
+immediate invalidation, repeated cleanup and active-lease lifetime. This is a
+separate responsiveness correction, not the cause of the Word key assignment.
+
+Excel mirror identity/pattern properties now use a fresh batched UIA request.
+Collapsed carets prove endpoint equality and read their prefix once; selected
+ranges retain both offset and exact-text checks. Read-plan tests fail if a
+collapsed caret requests the unnecessary end-prefix/selected-text reads. Formula
+exclusion, provider deadlines, single-request ownership, epoch/current editor and
+Enter/Edit checks remain. Hidden Formula Bars, multiline cells, localized mode
+labels and larger buffers are documented separately in [Excel findings](EXCEL_DEBUGGING.md).
+They were investigated but were not enabled without native selection evidence.
+Comment formatting/italics were deliberately left as requested by the user.
+
+All **12 targeted isolated suites passed, 1,584,902 assertions; zero failures**.
+This includes WordSnapshotTests (601), ExcelCellTests (2,220), ReplayTests
+(47,890), and the existing selection, correction-race, native-key, letter,
+replacement, shortcut, Word range and font-mode checks. The expanded replay
+coverage includes **256 Ctrl+Shift navigation chords**, both modifier sides and
+press/release orders, autorepeat, FIFO delivery and extended-key flags. The six
+editor-capability profiles and nine shared selection scenarios passed again.
+These are model/production-method checks, not new native editor interaction.
+All **19 compiled-app checks**, **98 C# formatting checks**, development audit
+(1,591 checks) and documentation links passed; the optional modern-comment
+fixture compiled only. No desktop input, foreground activation, document text
+read or Word/Excel document edit was used in this pass. New live Word/Excel
+keypress latency was not measured.
+
+The application-only development update was activated from temporary
+`out/word-comments/resident-navigation-excel-1` with the existing installed
+profile. All **41 protected installed file hashes** and startup registration
+were unchanged. Released 1.9.6, its installed executable and accepted baseline
+remain unchanged; no installer was built and nothing was published. Evidence is
+under `out/word-navigation-excel`: targeted results, read-only shortcut reports
+and a copy of the activation record.
+
+## Excel multiline cells and live capability review — 26 October 2026
+
+The user authorized the next Excel pass without desktop takeover. Read-only
+capability probes inspected existing window/editor metadata before and after the
+user hid the Formula Bar in a disposable edited cell. The visible logical
+`FormulaBar` exposed TextPattern; the hidden state removed that provider. Neither
+native editor supplied a usable text/selection interface. Standard Edit messages
+returned unusable values and were not adopted as a production fallback. No cell
+text was read by the probes, and no workbook, foreground or display setting was
+changed by them. The Formula Bar requirement remains for this Excel version.
+
+The development adapter now supports words/letters and selected single-line
+regions within multiline cells. Relative Left/Right navigation starts from a
+verified selection/caret, maps LF/CRLF boundaries and never issues line-local
+Home/End or spreadsheet Ctrl commands on that path. It rejects unproven cursor
+clusters before input. Selected passages spanning line breaks still skip because
+ordinary Unicode typing is not a verified line-break insertion transport. Existing
+formula and size limits remain. Navigation and replacement events use the
+foreground-owned correction tag; fresh text/range/mode and epoch checks remain.
+
+Word discovery now resolves selection/caret from one captured Excel buffer;
+clipboard discovery resolves selection/insertion from one capture. Replacement
+uses EnsureEdit's existing text/range proof rather than repeating that read
+immediately before it, and retains the final pre-input proof. The real adapter's
+transaction methods are exercised through an independent field backend, without
+native input. The new fixture covers 49,825 assertions, including relative
+selection, both line endings, retained selection, continuation, punctuation,
+restoration, stale ownership, ignored selection, unknown modes and formula output.
+
+All **14 targeted suites passed, 1,660,035 assertions; zero failures**.
+ExcelCellTests passed **52,045 assertions**. A final Excel rerun passed after the
+backend declaration was changed to an auto-property to remove an unused-field
+compiler warning. All **19 compiled-app checks**, **100 C# formatting checks**,
+development audit (1,612 checks) and documentation links passed. The capability
+tool compiled separately and is compile-only by default; `-ReadOnly` explicitly
+enables its bounded metadata inspection.
+
+After activation, the user performed word/letter checks and second-line conversion
+in a disposable Excel cell and confirmed all worked normally. Passive diagnostic
+timings contained seven visible-bar manual attempts between **99.1 and 362.2 ms**
+(median **200.7 ms**). Six involved abbreviation expansion and one was ordinary
+word conversion (**260.2 ms**), so these do not establish a controlled word/letter
+speedup or the 150 ms goal. One rejected range read occurred during the observed
+successful checks and is retained as a transient read observation. Three earlier
+hidden-bar attempts were correctly skipped and are excluded from conversion
+timings. Timing boundaries are accepted manual action to empty-hold release;
+they are not independent hardware key timestamps or queued-typing delivery.
+
+The temporary application-only build is running from
+`out/word-comments/resident-excel-broader-1` with the existing installed profile.
+Activation verified all **41 protected installed file hashes** and unchanged
+startup registration. The agent did not move focus, inject test input, open/edit
+a working workbook or change Word shortcuts/formatting. The user operated the
+scratch cell and Formula Bar. Release 1.9.6, the installed executable and accepted
+baseline remain unchanged. No installer/add-in was built or installed, and
+nothing was published.
+
+Evidence is under `out/excel-broader-support` (targeted and final Excel results,
+passive timing metadata and activation record) and `out/excel-capabilities`
+(visible/hidden metadata reports).
+
+## Excel passages, complete regression and persistent app update — 26 October 2026
+
+The earlier temporary activations above are superseded by this app-only update.
+The verified development executable now runs from the normal installed path,
+`%APPDATA%\KeyJaya\engine\keyjaya-app.exe`. Its default installed-profile resolution
+was verified without a `--root` argument. The Windows startup command was not
+changed and now resolves to this binary. The executable version and accepted
+release baseline remain 1.9.6; this is an unpublished development update.
+
+Excel relative selection now chooses the nearest verified selection edge even
+in single-line cells. Cursor-unit validation covers the selected span and actual
+travel path, allowing emoji/combining sequences elsewhere to remain untouched.
+The established single-line script/cluster fallback remains. Selected LF/CRLF
+passages use balanced Alt+Enter insertion, with preflight for both insertion and
+retained selection. Current buffer/range/mode, formula, size, epoch and native
+ownership guards remain. Status-mode metadata uses a fresh batched UIA request.
+No clipboard transport was introduced.
+
+The user operated a disposable Excel cell and confirmed conversion across two
+lines, retained selection, one-step Ctrl+Z, and a nearby word with emoji or a
+combining accent elsewhere all worked. The agent did not inject test input,
+move foreground focus or open/read/edit working documents. Eight mixed passive
+action timings ranged from 12.0 to 874.7 ms; they include selection/undo and
+provider retries and are not a controlled conversion-speed comparison. The
+Formula Bar and English mode-label requirements remain, as do exclusions for
+formula-like/oversized buffers and unverified multiline cursor clusters.
+
+Verification completed:
+
+- All **44 noninteractive suites passed: 26,997,690 assertions, zero failures**.
+  ExcelCellTests passed **53,101**, including **50,881** transaction-contract
+  assertions. WordSnapshotTests passed **601**. The shared editor matrix still
+  covers six profiles and nine scenarios without controlling those applications.
+- All **26 Python developer-tool tests** passed; network and installer calls in
+  those fixtures are mocked.
+- The app-only build and all **19 compiled-app checks** passed. No installer or
+  payload package was built.
+- All **100 C# formatting checks**, the **1,612-check development audit**, pinned
+  Hindi-source verification, documentation checks and `git diff --check` passed.
+  Intentional development drift remains separate from the accepted release data.
+- All **17 engine benchmark cases** passed with 301 warm samples per case and no
+  budget failures. Highest warm p95: **11.293 ms**; initialization: **209.905 ms**.
+  These do not measure native editor latency. A long-cell navigation fixture
+  independently proves **10 events instead of 3,614** for the same nearby word.
+- A disposable binary-update fixture passed **25 checks**, including successful
+  replacement, locked-target refusal, hash mismatch and rollback after an actual
+  swap followed by injected failure. No live profile was used by that fixture.
+
+The live app-only update gracefully closed only the verified owned candidate,
+atomically replaced the installed executable, and launched it hidden with its
+default profile. The original executable and unchanged framework configuration
+were backed up beneath `out/stability-next/installed-backup-*`. All **47 protected
+profile files** (configuration, custom triggers, dictionaries/assets, retained
+state and framework configuration) had identical before/after SHA-256 hashes.
+Startup registration was unchanged. Tray Restart resolves the running executable
+path, so subsequent launches use the installed development binary as well.
+
+Evidence is under `out/stability-next`: `full44-results.json`,
+`binary-transaction-tests.json`, `app-only-update.json`, passive timing metadata
+and the original binary backup. The installed SHA-256 is
+`4DC74DB230D890467A861549D897124DF775F534E5460290E8D4F08C14535B47`.
+The engine report is beneath
+`out/benchmarks/run-127d885b16a74ae58d07e7d16e6ce13d`. No installer/add-in was built
+or installed, no Word shortcuts or templates were changed, and nothing was
+published.
+
+## Spelling editor and read-only Word shortcut inspection — 26 October 2026
+
+The tray now includes **Edit spellings and style…** and **Check Word shortcut
+conflicts…**. The spelling editor manages preferred Unicode spellings, protected
+words and roman/italic/name exceptions using the existing configuration policy.
+It shows legacy rules without rewriting legacy files and saves only personal
+word/style overrides in `customizations.ini`. Untouched sections, comments, line
+endings and BOM are preserved. Save creates an exact backup, refuses changed
+snapshots, commits atomically and rolls back failed reloads while retaining newer
+external edits. No test changed the user's actual rules or triggers.
+
+The Word check is also available inside Customize shortcuts, where it can inspect
+proposed bindings without saving them. It reads only shortcut and active-window
+ownership metadata from already-open Word instances. A separate hidden helper
+keeps Word COM work outside the resident; a five-second parent deadline stops
+only that helper if it stalls. It does not activate Word, read document text,
+set CustomizationContext, execute a Word command, change assignments or save a
+template. Reports distinguish KeyJaya overlaps, changed navigation assignments,
+Word shortcut prefixes, unassigned keys and unavailable/incomplete checks.
+
+The native read-only check found one accessible Word instance. All six checked
+navigation chords were normal, including **Ctrl+Shift+Left → WordLeftExtend**.
+Five KeyJaya/Word overlaps were reported: Ctrl+Comma and Ctrl+Slash were Word
+shortcut prefixes; Ctrl+Backslash was ToggleMasterSubdocs; Ctrl+LeftBracket and
+Ctrl+RightBracket were ShrinkFontOnePoint and GrowFontOnePoint. These existing
+assignments were not changed. A report applies to each instance's active window,
+rather than every open document/template.
+
+Verification completed:
+
+- All **44 isolated suites passed: 26,997,748 assertions, zero failures**.
+- Final focused checks after the editor input-guard change passed **seven suites,
+  1,817,271 assertions**. Spelling-editor contracts passed **44** assertions and
+  shortcut-inspection contracts **26**, including production-parent helper startup,
+  malformed output and termination after a simulated five-second stall. Helpers
+  in these tests never connect to Word.
+- Resident-owned editor windows and message boxes now bypass conversion by
+  process ownership. Both keyboard decisions and registered-shortcut dispatch
+  use that guard. The separate cheat-sheet exception remains. This prevents
+  automatic or manual conversion from changing text being entered into settings.
+- Five forms were rendered privately without displaying any windows, at 96, 144
+  and 192 DPI: **15 renders and 132 visibility/layout checks**. A clipped footer
+  at 200% scaling was corrected. Offscreen printing does not fully paint native
+  combo boxes; their standard controls and selection state remain separate from
+  this visual evidence. No desktop screenshot or input automation was used.
+- The installed spelling configuration loaded successfully in a read-only
+  preflight. All **26 Python tests**, **19 final compiled-app checks**, **106 C#
+  formatting checks**, **1,658 development-audit checks** and pinned Hindi-source
+  verification passed. All **17 engine benchmark cases** passed, with no budget
+  failures. Engine measurements remain separate from native editor response time.
+
+Evidence is under `out/spelling-word`: `full44-results.json`,
+`guard-focused-results.json`, `word-inspection.json`, private render PNGs and
+app-only update records/backups. The engine report is under
+`out/benchmarks/run-ee9726a608eb431d8084e35f92f34c1f`.
+
+After the user confirmed readiness, the final build, including the editor-input
+guard, was activated at the normal installed/startup executable path. The restart
+verified an idle, stable chat/desktop foreground, released buttons/modifiers,
+resident ownership and absence of visible KeyJaya settings windows. The chat host
+was verified by its Codex product identity; this packaged installation's executable
+is named ChatGPT.exe. No foreground activation or desktop input was sent.
+
+The previous app was backed up, only the executable was replaced, and the new
+resident's default profile was verified without `--root`. All **47 protected
+profile files** and Windows startup registration remained unchanged. A separate
+final read-only verification confirmed the running executable matches the tested
+source, verified its backup, and found all 47 hashes still unchanged. The final
+SHA-256 is `BEFBF6CCB015930D4BDD52504E4CACC672ED9CF30ABB7EFC620432060858CB55`.
+Activation and final checks are in `app-only-update.json` and
+`final-verification.json` beneath `out/spelling-word`. Working documents were not
+opened/read/edited by these checks. No installer was built or run, nothing was
+published, and the accepted 1.9.6 release baseline remains unchanged.
+
+## Ctrl-word italics and requested menu cleanup — 26 October 2026
+
+The spelling editor has been removed, including its store/window and compilation
+inputs. Existing configuration and spelling/style preferences remain supported
+and were not rewritten or removed. The standalone Word shortcut-overlap tray
+action is also removed; its read-only check remains inside Customize shortcuts.
+The menu fixture and regenerated menu image reflect these changes.
+
+The owner defined the new formatting policy before implementation:
+
+- An already-correct recognized Sanskrit/Bengali spelling, including `bhakti`,
+  `nitya`, `dvija` and `dvijas`, is italicized unchanged on the first Ctrl tap.
+- Individual terms and loanwords can be italic, including `dharma`, `guru`,
+  `yoga`, `karma` and their plurals. One selected word counts as an individual
+  word conversion. Ordinary English and unrecognized words remain protected.
+- Selected passages italicize eligible terms but actively make the regular-type
+  loanword exceptions regular, even if they were previously italic. Names keep
+  their regular-type policy; book-title and personal override rules remain.
+- Whole Sanskrit compounds such as `bhakti-yoga`, `nitya-dharma` and `guru-sevā`
+  are treated as one italic term, including in passages.
+- Repeated word taps cycle alternative spellings and the original text/format.
+  A word without alternatives cycles between italic and its original formatting.
+- The existing automatic-italics setting controls the behavior. Word comments,
+  plain text, text-only Excel editing and script outputs gain no unsupported
+  formatting. Existing supported rich-text/Markdown formatting paths are used.
+
+The production Ctrl-word plan records an explicit original-formatting position,
+so the same text can appear once as italic and once with its original formatting.
+Word retains native font snapshots, expected-text/range checks and its undo
+record; repeated cycles reuse the original continuation style. A single-word
+selection can share the word path while retaining selection. Explicit regular
+spans clear italics without changing unrelated text. InDesign preserves font
+weight when choosing a nonitalic face; rich HTML emits normal-style spans.
+Markdown handles owned emphasis markers while preserving bold and protected
+code/links/headings. Wrapper expansion verifies provider text before selection.
+
+Verification completed:
+
+- All **44 isolated suites passed: 26,998,329 assertions, zero failures**.
+- Final book-title/personal-rule review was followed by **five focused suites,
+  647,496 assertions**, including **606 Ctrl-italics contract assertions**.
+  Mixed-font passage checks include both italic and regular spans; the shared
+  editor matrix, Word ownership/font lifetime, navigation and replay checks pass.
+- All **26 Python developer-tool tests**, **19 compiled-app checks**, **105 C#
+  formatting checks**, **1,650 development-audit checks**, pinned source checks,
+  documentation links and `git diff --check` passed.
+- All **17 engine benchmark cases** passed with 301 warm samples and no budget
+  failures. Highest warm p95: **4.264 ms**; initialization: **206.74 ms**. These
+  measure the engine, not native editor timing or the entire new Ctrl workflow.
+
+The candidate is running from the normal installed/startup executable path,
+using the default installed profile. Its previous executable was backed up.
+All **47 protected profile files** and startup registration were unchanged during
+activation and separate final read-only verification. The executable SHA-256 is
+`FAAE60DA009A6038F555006A7400E74BF248E9356942C6C82E419DDCE0E83FD4`.
+The owner reported that everything in the scratch Word check worked, including
+the requested formatting cycle and passage undo, but that both individual words
+and passages were slower than desired. This is user-observed native behavior;
+the offline models alone do not prove visible formatting or undo. The agent sent
+no test input and did not open/read/edit working documents. No installer was built or
+run, nothing was published, and the accepted 1.9.6 release baseline is unchanged.
+
+Evidence is beneath `out/ctrl-italics`: `agreed-policy.json`, `full44-results.json`,
+`final-focused-results.json`, `compiled-checks.json`, app-only update/verification
+records and the prior binary backup. The engine report is under
+`out/benchmarks/run-6c8985685fe84c71a7724b8c4c81d71c`.
+
+## Word body latency follow-up — 26 October 2026
+
+After confirming the new Ctrl formatting behavior, the owner reported excessive
+delay for both individual words and selected passages. Read-only diagnostics for
+the initial candidate showed ten Word word actions with an accepted-action to
+empty-input-hold-release median of **771.8 ms**, range **616.3–3,411.1 ms**. Two
+selected-passage actions were **1,735.3 ms** and **2,089.5 ms**. These are sparse,
+uncontrolled samples; empty releases can also occur on skipped work. The summary
+includes only actions that entered native formatting with no logged rejection;
+the owner's visible-result observation remains separate.
+
+The follow-up removes duplicate work while retaining edit ownership:
+
+- Word Ctrl discovery reuses its own completed paste-UI preparation and selection
+  observation within the same owner/generation. Final focus, caret/selection,
+  expected-text and native commit checks remain.
+- Replay ownership is captured inside the native edit from its verified document
+  and visible projection, removing a second Word binding and revision scan.
+  An owned font snapshot can supply the original continuation style directly.
+- Original-font restoration uses the transaction's verified result projection,
+  preserving character fonts and tracked-deletion coordinates. Live native
+  styles already matching an italic/regular request avoid an unnecessary write.
+
+Six focused suites passed **647,569 assertions**, including **29** new production
+replay/font/style contracts, the selection matrix, formatting rules, shortcut
+inspector, navigation and ordered replay checks. The fake range rejects duplicate
+text/revision reads and counts unchanged style writes; ownership, cancellation,
+provider failures and one-record undo are exercised without Word or desktop input.
+All **19 compiled-app checks**, **106 C# formatting checks**, **1,657 development
+audit checks**, **39 local documentation links**, **4 image headers** and
+`git diff --check` passed. The earlier complete 44-suite run is recorded above;
+the follow-up used focused checks appropriate to these adapter changes.
+
+The app-only candidate was activated from the normal installed/startup path.
+Separate read-only verification confirmed the running binary, backup and default
+profile. All **47 protected profile files** and startup registration were unchanged.
+The SHA-256 is `41518FB5ACBF01B462E985A102118B132C6F412E2AACF7DEDC8826303C34E454`.
+The owner confirmed **“Faster, and all still works”** for individual words,
+passages, formatting and one-step undo in a scratch Word document. The seven
+accepted word actions in the follow-up diagnostics had a median of **588.8 ms**,
+range **561.1–1,132.6 ms**. Two passage actions were **1,075.0 ms** and
+**1,088.5 ms**. These are uncontrolled samples with different action histories;
+they are not a controlled percentage-speedup claim. No agent desktop input or
+working-document access was used. No installer was built/run,
+nothing was published and the accepted 1.9.6 release baseline is unchanged.
+
+The final review retains fresh selection discovery after recovering a paste
+popup that had hidden the selection provider. Positive pre-popup selection
+evidence still requires an exact match. This last guard passed Word snapshot and
+ordered-replay checks again: **48,520 assertions**, plus the compiled-app probe.
+Its tested binary is `84A0324A0A5629A883F4C88EF8A3C0D189719BB5F2065D2FA590CDE4BB31EABE`.
+The guarded restart initially detected desktop activity and left the first
+faster build running. After the owner confirmed idle-input readiness, the final
+guard was activated at the normal installed/startup path. Separate read-only
+verification confirmed the running executable matches that tested SHA-256,
+the previous executable backup is valid, and all **47 protected profile files**
+and startup registration are unchanged. No desktop input was sent, no working
+document was accessed, no installer was built/run and nothing was published.
+
+The owner then confirmed that the final scratch check passed: paste `bhakti`,
+tap Ctrl immediately, and press Ctrl+Z once. This confirms visible italics and
+native undo after pasting on the final activated build, separately from the
+automated snapshot/replay models. The result is recorded in
+`out/ctrl-italics-speed/manual-word-after-paste-check.json`.
+
+Evidence is beneath `out/ctrl-italics-speed`: `focused-results.json`,
+`compiled-checks.json`, `baseline-timings.json`, `candidate-timings.json`,
+`manual-word-check.json`, guarded activation/final-verification records and the
+prior executable backup. The timing summarizer emits only phase
+timings and generic action metadata, without document text.

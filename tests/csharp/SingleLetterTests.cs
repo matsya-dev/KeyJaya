@@ -428,6 +428,21 @@ namespace KeyJaya
             Check(!WordPasteGuard.Label("Paste Options (Ctrl) unrelated") && !WordPasteGuard.Label(null), "shortcut-qualified label must still match exactly");
             Check(WordPasteGuard.DocumentNode("Body", false, false) && WordPasteGuard.DocumentNode("", true, false), "document ancestor can own focused Edit/Text child");
             Check(!WordPasteGuard.DocumentNode("Find", false, false) && !WordPasteGuard.DocumentNode("Body", true, true), "ribbon/find and menu are not document focus");
+            Check(WordPasteGuard.DocumentNode("", false, false, "_WwG", true), "editable native Word comment and reply pane owns focus");
+            Check(!WordPasteGuard.DocumentNode("", false, false, "_WwG", false), "read-only native comment pane does not own edit focus");
+            Check(!WordPasteGuard.DocumentNode("", false, true, "_WwG", true), "comment-like menu is not an edit target");
+            foreach (string nativeClass in new[]
+            {
+                null,
+                "",
+                "Edit",
+                "RichEdit20W",
+                "NetUIHWND",
+                "Chrome_RenderWidgetHostHWND"
+            }
+
+            )
+                Check(!WordPasteGuard.DocumentNode("", false, false, nativeClass, true), "unrelated editable field is not Word comment focus");
             Check(WordPasteGuard.KeepFocusTransition(true, true, true, false), "late document focus after Escape retains pending Ctrl conversion");
             Check(WordPasteGuard.KeepFocusTransition(true, true, false, true), "paste menu opening retains pending Ctrl conversion");
             Check(!WordPasteGuard.KeepFocusTransition(false, true, true, true), "another Word window cancels pending conversion");

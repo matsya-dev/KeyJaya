@@ -1,5 +1,122 @@
 # Excel cell-editing investigation
 
+## Selected passages and shorter navigation — 26 October 2026
+
+Selected passages now support LF/CRLF line breaks. Replacement emits Alt+Enter
+inside verified Edit mode, never a committing bare Enter, and does not use the
+clipboard. Preflight requires supported insertion and retained-selection plans.
+The user tested a selected passage across two lines, retained selection and one
+Ctrl+Z, and confirmed all worked. A nearby-word check with emoji or a combining
+accent elsewhere in the cell also worked.
+
+Relative navigation now prefers the nearest verified caret/selection edge in
+single-line cells as well as multiline cells. Only the selected span and actual
+travel path need proven cursor units. Surrogates, combining marks and format
+characters outside that path no longer cause a blanket rejection. Paths through
+unverified clusters remain excluded for multiline cells. The established
+single-line fallback remains for script/cluster selections, including Devanagari,
+Bengali and ITRANS conversion.
+
+A 3,606-character model cell needs 10 navigation events to select a nearby word;
+the old Home/End plan needed 3,614. This establishes less generated input, not a
+measured native latency improvement. Status-mode properties and ValuePattern
+data are also fetched in one fresh UIA cache request; ownership, exact mode,
+full-buffer, range and epoch checks remain.
+
+The Excel suite passed 53,101 assertions, including 50,881 transaction-contract
+assertions. The complete 44-suite run also passed. The verified app-only build
+now occupies the normal installed/startup executable path, with its previous
+binary backed up and all 47 protected profile files unchanged. No installer was
+built or run. See [the development verification record](DEVELOPMENT_VERIFICATION.md)
+for the update and test evidence.
+
+Formula Bar visibility, exact English mode labels, formula exclusions and the
+4,096-character limit remain. Complex payloads/navigation still require a proven
+cursor plan; this does not claim arbitrary Unicode cluster support.
+
+## Earlier multiline words and single-pass discovery — 26 October 2026
+
+The latest development adapter supports word/letter conversion and selected
+single-line text inside a multiline cell. It navigates relative to the freshly
+verified caret/selection, without treating Home/End as the whole cell's ends.
+LF and CRLF are supported; a caret between the CR and LF is refused. The native
+field must still be in verified Edit mode, and full-buffer text and exact selected
+offsets are checked before replacement. Neighboring lines and punctuation remain
+part of that verification. All Excel replacement/navigation events now use the
+foreground-owned correction-input tag.
+
+Multiline selections requiring line-break insertion are still skipped. The new
+relative path also refuses surrogate/combining/format character sequences whose
+native cursor-step behavior has not been established. Single-line handling keeps
+its existing path. No formula protection or 4,096-character limit was removed.
+
+Word discovery now derives selection or caret from one captured Excel snapshot;
+clipboard discovery similarly derives selection or insertion from one capture.
+Fresh native validation before editing remains. Replacement no longer performs
+an extra full-buffer read immediately before EnsureEdit, because EnsureEdit
+already verifies that same text/range and the mode; the final pre-input check is
+retained. Model callbacks prove the one-capture decisions and the reduced read
+count rather than claiming an unmeasured native speedup.
+
+### Hidden Formula Bar findings
+
+The user prepared a disposable edited cell and hid the Formula Bar. The read-only
+capability probe found the logical `FormulaBar` Edit/TextPattern when visible and
+found it absent when hidden. The native `EXCEL6` and `EXCEL<` controls exposed no
+TextPattern or ValuePattern in that state. Standard Edit selection messages also
+did not yield usable active-editor evidence; arbitrary/zero values in custom
+Office controls must not be mistaken for a supported selection API. No cell text
+was read, input sent, focus changed or workbook/display setting changed by the
+probe. The user was then free to restore the Formula Bar.
+
+The Formula Bar requirement therefore remains for the inspected Excel version.
+A hidden-bar fallback requires another verified active-edit provider; reading a
+committed worksheet value does not establish the current uncommitted buffer or
+caret. An Excel-side extension is a separate possible investigation, not an
+external-resident shortcut: Microsoft's [C API rules](https://learn.microsoft.com/en-us/office/client-developer/excel/programming-with-the-c-api-in-excel)
+restrict calls to suitable Excel-controlled DLL/XLL entry contexts. No add-in was
+built, loaded or installed.
+
+The developer probe is compile-only by default:
+
+```powershell
+./tools/inspect_excel.ps1
+./tools/inspect_excel.ps1 -ReadOnly
+```
+
+It bounds native-window/child discovery and provider time, inspects only metadata
+in already-open Excel windows, and never opens a workbook or controls its UI.
+Capability reports are beneath `out/excel-capabilities`. Transaction fixtures
+exercise the actual adapter against an independent field backend, including
+relative selection, retention, cancellation, exact text, ignored navigation,
+mode rejection, stale ownership, original-caret restoration and formula guards.
+
+## Offline performance and support review — 26 October 2026
+
+This pass did not control Word/Excel, open documents/workbooks or send desktop
+input. Excel mirror metadata and its text pattern are now fetched in one current
+UIA cache request. A collapsed caret reads one prefix after proving its endpoints
+equal, rather than reading both prefixes and selected text. Selected ranges keep
+their exact text and offset checks. Provider deadlines, late-result rejection,
+the single outstanding read, edit-mode validation and formula exclusions remain.
+The new read-plan fixtures cover Unicode buffers, empty/4,096-character buffers,
+selected ranges, bad bounds, changed text and fail-before-query exclusions.
+There is no new live Excel latency measurement from this pass.
+
+Broader support remains limited by specific adapter assumptions:
+
+| Area | Current constraint and work needed |
+| --- | --- |
+| Hidden Formula Bar | The owned mirror can be absent. An alternative must expose and verify the active edit buffer and selection without enumerating the virtual worksheet grid or changing the user's display settings. |
+| Multiline cells | Word/letter conversion and selected passages across LF/CRLF now work with verified relative selection and Alt+Enter insertion. Navigation through unverified character clusters can still be skipped. |
+| Non-English Excel | Enter/Edit mode recognition currently uses exact English status labels. A language-neutral mode signal or verified localized labels is needed before claiming support. |
+| Very long cells and formula-like buffers | The 4,096-character limit and `=`, `+`, `-`, `@` exclusions remain deliberate boundaries. Model tests do not establish safe native selection for broader buffers. |
+
+No display setting, application shortcut, installed configuration or custom
+trigger was changed for this investigation.
+
+## Earlier native investigation — 23 October 2026
+
 Development checks on 23 October 2026. No installer was built or release
 published. Windows input was confined to a newly created, disposable `Book4`;
 existing workbooks were not edited or closed. Formula Bar was enabled for testing.

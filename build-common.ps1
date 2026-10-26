@@ -18,6 +18,7 @@ $coreNames = @(
     'SingleLetters'
     'ResidentReplacement'
     'SelectionFormatting'
+    'ControlItalics'
 )
 $core = $coreNames | ForEach-Object { Join-Path $PSScriptRoot ('src/' + $_ + '.cs') }
 
@@ -27,6 +28,8 @@ $runtimeNames = @(
     'LaunchRequests'
     'TriggerEditorStore'
     'TriggerEditorWindow'
+    'WordShortcutInspector'
+    'WordShortcutWindow'
     'TrayMenu'
     'TrayAppearance'
     'WindowAppearance'
@@ -40,6 +43,7 @@ $runtimeNames = @(
     'InDesignFindField'
     'ExcelCellField'
     'WordApplication'
+    'WordCommentFocus'
     'WordSelection'
     'SafeEdit'
     'Runtime'

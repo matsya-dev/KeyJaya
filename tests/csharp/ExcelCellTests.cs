@@ -153,10 +153,133 @@ namespace KeyJaya
             Check(!hold.Keyboard(new Native.KeyData { vk = 0x46 }, 0x100, owner), "Typing resumes normally after failed discovery");
         }
 
-        public static int Main()
+        static void CaretReadPlan()
+        {
+            foreach (string text in new[]
+            {
+                "",
+                "raja",
+                "Earlier untouched prasada.",
+                "ā śāstra",
+                "कृष्ण",
+                "কৃষ্ণ",
+                new string ('x', 4096)
+            }
+
+            )
+                foreach (int position in new[]
+                {
+                    0,
+                    text.Length / 2,
+                    text.Length
+                }
+
+                )
+                {
+                    int start, end, reads = 0;
+                    Check(ExcelCellField.ReadOffsets(text, true, () =>
+                    {
+                        reads++;
+                        return position;
+                    }, () =>
+                    {
+                        throw new Exception("Collapsed caret re-read its end prefix");
+                    }, () =>
+                    {
+                        throw new Exception("Collapsed caret queried selected text");
+                    }, out start, out end), "Collapsed Excel caret is readable");
+                    Check(start == position && end == position && reads == 1, "Collapsed caret uses exactly one live prefix read");
+                }
+
+            foreach (string text in new[]
+            {
+                "raja",
+                "Earlier untouched prasada.",
+                "ā śāstra",
+                "कृष्ण",
+                "কৃষ্ণ"
+            }
+
+            )
+                for (int first = 0; first <= text.Length; first++)
+                    for (int last = first; last <= text.Length; last++)
+                    {
+                        int start, end, reads = 0;
+                        Check(ExcelCellField.ReadOffsets(text, false, () =>
+                        {
+                            reads++;
+                            return first;
+                        }, () =>
+                        {
+                            reads++;
+                            return last;
+                        }, () =>
+                        {
+                            reads++;
+                            return text.Substring(first, last - first);
+                        }, out start, out end), "Selected Excel range is readable");
+                        Check(start == first && end == last && reads == 3, "Selected range still verifies both prefixes and exact text");
+                    }
+
+            foreach (string text in new[]
+            {
+                "=1+2",
+                "+A1",
+                "-A1",
+                "@SUM(A1)",
+                "two\rlines",
+                "tab\tvalue",
+                new string ('x', 4097)
+            }
+
+            )
+            {
+                int start, end;
+                Check(!ExcelCellField.ReadOffsets(text, true, () =>
+                {
+                    throw new Exception("Excluded buffer queried a caret");
+                }, () => 0, () => "", out start, out end) && start == -1 && end == -1, "Formula and unsupported buffers fail before range queries");
+            }
+
+            foreach (var bounds in new[]
+            {
+                new[]
+                {
+                    -1,
+                    0
+                },
+                new[]
+                {
+                    5,
+                    5
+                },
+                new[]
+                {
+                    3,
+                    2
+                },
+                new[]
+                {
+                    0,
+                    5
+                }
+            }
+
+            )
+            {
+                int start, end;
+                Check(!ExcelCellField.ReadOffsets("raja", false, () => bounds[0], () => bounds[1], () => "", out start, out end) && start == -1 && end == -1, "Out-of-bounds or reversed Excel range is refused");
+            }
+
+            int wrongStart, wrongEnd;
+            Check(!ExcelCellField.ReadOffsets("raja", false, () => 0, () => 4, () => "changed", out wrongStart, out wrongEnd) && wrongStart == -1 && wrongEnd == -1, "Changed selected text cannot authorize a replacement");
+        }
+
+        public static int Main(string[] args)
         {
             BlockedProvider();
             ProviderFailures();
+            CaretReadPlan();
             Recovery();
             foreach (string name in new[]
             {
@@ -271,6 +394,8 @@ namespace KeyJaya
                 "कृष्ण",
                 "কৃষ্ণ",
                 "123",
+                "two\nlines",
+                "two\r\nlines",
                 new string ('x', 4096)
             }
 
@@ -285,7 +410,6 @@ namespace KeyJaya
                 "-SUM(A1)",
                 "@SUM(A1)",
                 "bad\0text",
-                "two\nlines",
                 "two\rlines",
                 "tab\tvalue",
                 new string ('x', 4097)
@@ -293,6 +417,7 @@ namespace KeyJaya
 
             )
                 Check(!ExcelCellField.TextBuffer(invalid), "Formula or ambiguous cell buffer remains untouched");
+            passed += ExcelTransactionTests.Run(args[0]);
             Console.WriteLine("PASS: " + passed + " FAIL: 0");
             return 0;
         }

@@ -6,6 +6,8 @@ Requires desktop Word and a quiet keyboard. Opens only its own scratch document,
 briefly delays that new Word server and tests formatting, undo, focus changes,
 disconnection and input-queue cleanup. Existing documents and the installed app
 are untouched. No hooks, keyboard injection, clipboard or installer are used.
+Also checks classic comments and threaded replies in Draft and Print Layout,
+including Unicode/Balarama, cycling, formatting, native undo and continued typing.
 .PARAMETER AllowDesktop
 Required to run the native test; otherwise only compile the test executable.
 .PARAMETER DelayMilliseconds

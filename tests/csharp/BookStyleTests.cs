@@ -28,6 +28,7 @@ namespace KeyJaya
 
         public static int Main(string[] args)
         {
+            passed += ControlItalicContracts.Run(args[0]);
             using (Core c = new Core(args[0]))
             {
                 foreach (string mode in new[]

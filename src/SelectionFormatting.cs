@@ -10,12 +10,13 @@ namespace KeyJaya
     public sealed class ItalicSpan
     {
         public readonly int Start, Length;
-        public readonly bool Force;
-        public ItalicSpan(int start, int length, bool force = false)
+        public readonly bool Force, Italic;
+        public ItalicSpan(int start, int length, bool force = false, bool italic = true)
         {
             Start = start;
             Length = length;
             Force = force;
+            Italic = italic;
         }
     }
 
@@ -58,7 +59,61 @@ namespace KeyJaya
 
         public static bool ExistingItalics(string prefix, string suffix)
         {
-            return Regex.IsMatch(prefix, @"(?:\*|_)$") && Regex.IsMatch(suffix, @"^(?:\*|_)");
+            Match before = Regex.Match(prefix, @"(?<![\\*_])([*_]+)$"), after = Regex.Match(suffix, @"^([*_]+)");
+            return before.Success && after.Success && before.Value[0] == after.Value[0] && before.Length % 2 == 1 && after.Length % 2 == 1;
+        }
+
+        static readonly Regex ItalicRuns = new Regex(@"(?<![\\*_])(?<mark>\*{3}|\*|_{3}|_)(?<body>[^*_\r\n]+)\k<mark>(?![*_])");
+        public static string Apply(string output, Func<string, ItalicSpan[]> policy, string prefix = "", string suffix = "")
+        {
+            if (InFence(prefix))
+                return output;
+            var spans = policy(output);
+            var mask = Protected(output);
+            string regularized = ItalicRuns.Replace(output, match =>
+            {
+                if (mask.Skip(match.Index).Take(match.Length).Any(x => x))
+                    return match.Value;
+                var body = match.Groups["body"];
+                bool[] italic = Enumerable.Repeat(true, body.Length).ToArray();
+                bool changed = false;
+                foreach (var span in spans.Where(x => !x.Italic))
+                    for (int n = Math.Max(body.Index, span.Start); n < Math.Min(body.Index + body.Length, span.Start + span.Length); n++)
+                    {
+                        italic[n - body.Index] = false;
+                        changed = true;
+                    }
+
+                if (!changed)
+                    return match.Value;
+                bool bold = match.Groups["mark"].Length == 3;
+                char marker = match.Groups["mark"].Value[0];
+                var result = new System.Text.StringBuilder();
+                for (int at = 0; at < body.Length;)
+                {
+                    int end = at + 1;
+                    while (end < body.Length && italic[end] == italic[at])
+                        end++;
+                    string run = body.Value.Substring(at, end - at);
+                    string trimmed = run.Trim();
+                    int leading = run.Length - run.TrimStart().Length, trailing = run.Length - run.TrimEnd().Length;
+                    if (trimmed.Length == 0)
+                        result.Append(run);
+                    else
+                    {
+                        result.Append(run.Substring(0, leading));
+                        int count = (bold ? 2 : 0) + (italic[at] ? 1 : 0);
+                        result.Append(new string (marker, count)).Append(trimmed).Append(new string (marker, count));
+                        if (trailing > 0)
+                            result.Append(run.Substring(run.Length - trailing));
+                    }
+
+                    at = end;
+                }
+
+                return result.ToString();
+            });
+            return Italicize(regularized, policy(regularized), prefix, suffix);
         }
 
         public static string ConvertProtected(string input, Func<string, string> convert)
@@ -85,10 +140,14 @@ namespace KeyJaya
             if (InFence(prefix) || ExistingItalics(prefix, suffix))
                 return output;
             var mask = Protected(output);
+            var alreadyItalic = new bool[output.Length];
+            foreach (Match run in ItalicRuns.Matches(output))
+                for (int n = run.Groups["body"].Index; n < run.Groups["body"].Index + run.Groups["body"].Length; n++)
+                    alreadyItalic[n] = true;
             var result = new System.Text.StringBuilder(output);
-            foreach (var span in (spans ?? new ItalicSpan[0]).OrderByDescending(x => x.Start))
+            foreach (var span in (spans ?? new ItalicSpan[0]).Where(x => x.Italic).OrderByDescending(x => x.Start))
             {
-                if (span.Start < 0 || span.Length < 1 || span.Start > output.Length - span.Length || mask.Skip(span.Start).Take(span.Length).Any(x => x))
+                if (span.Start < 0 || span.Length < 1 || span.Start > output.Length - span.Length || mask.Skip(span.Start).Take(span.Length).Any(x => x) || alreadyItalic.Skip(span.Start).Take(span.Length).All(x => x))
                     continue;
                 string before = prefix + output.Substring(0, span.Start), after = output.Substring(span.Start + span.Length) + suffix;
                 string line = before.Substring(Math.Max(0, before.LastIndexOf('\n') + 1));
@@ -200,6 +259,24 @@ namespace KeyJaya
 
         public static readonly HashSet<string> Titles = new HashSet<string>("bhagavad-gita srimad-bhagavatam bhagavatam caitanya-caritamrta caitanya-caritamrita caitanya-bhagavata bhakti-rasamrta-sindhu bhakti-rasamrita-sindhu sarartha-darsini isopanisad isopanishad brahma-samhita hari-bhakti-vilasa brhad-bhagavatamrta".Split(' '), StringComparer.OrdinalIgnoreCase);
         static readonly HashSet<string> Generic = new HashSet<string>("ayurveda tamala bhakti jnana sikha sarartha darsini sraddha nistha ruci asakti prema seva puja diksa siksa tattva svarupa suddha ananda anartha adhikara pusti marga purnima raja prana asana".Split(' '), StringComparer.OrdinalIgnoreCase);
+        public static bool Loanword(string word, string mode)
+        {
+            if (string.IsNullOrEmpty(word))
+                return false;
+            string key = Stem(Key(word, mode));
+            return Roman.Contains(key) || key.EndsWith("s", StringComparison.Ordinal) && Roman.Contains(key.Substring(0, key.Length - 1));
+        }
+
+        public static bool ProperName(string word, string mode, ISet<string> bookNames = null)
+        {
+            if (string.IsNullOrEmpty(word))
+                return false;
+            string key = Stem(Key(word, mode));
+            if (Titles.Contains(key))
+                return false;
+            return Names.Contains(key) || CompoundForms.IsRoman(key) || Regex.IsMatch(key, @"^(?:gaura|guru|vyasa|buddha|caitanya|nrsimha|nrisimha|narasimha|rama|ratha)-(?:purnima|astami|navami|yatra|jayanti)$") || char.IsUpper(word[0]) && (CapitalNames.Contains(key) || bookNames != null && bookNames.Contains(key) && !Generic.Contains(key) && !Roman.Contains(key));
+        }
+
         public static bool RomanWord(string word, string mode, ISet<string> bookNames = null)
         {
             if (string.IsNullOrEmpty(word))
@@ -240,9 +317,9 @@ namespace KeyJaya
                 if (span.Start < at || span.Length <= 0 || span.Start > text.Length - span.Length)
                     return null;
                 result.Append(Escape(text.Substring(at, span.Start - at)));
-                result.Append("<i>");
+                result.Append(span.Italic ? "<i>" : "<span style=\"font-style:normal\">");
                 result.Append(Escape(text.Substring(span.Start, span.Length)));
-                result.Append("</i>");
+                result.Append(span.Italic ? "</i>" : "</span>");
                 at = span.Start + span.Length;
             }
 

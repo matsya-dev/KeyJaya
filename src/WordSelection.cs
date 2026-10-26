@@ -124,14 +124,16 @@ namespace KeyJaya
             internal readonly int Start, Story;
             internal readonly List<object> Fonts = new List<object>();
             DocumentOwner documentIdentity;
+            readonly Action<object> releaseFont;
             int users;
             bool disposed;
-            internal FontSnapshot(object document, int start, int story, string original)
+            internal FontSnapshot(object document, int start, int story, string original, Action<object> release = null)
             {
                 Original = original;
                 Start = start;
                 Story = story;
                 documentIdentity = new DocumentOwner(document);
+                releaseFont = release ?? Free;
             }
 
             internal bool Matches(object document, int start, int story, string output)
@@ -174,16 +176,38 @@ namespace KeyJaya
                 }
             }
 
-            void FreeFonts()
+            void FreeFonts(bool background = false)
             {
                 object[] releasing = Fonts.ToArray();
                 Fonts.Clear();
                 DocumentOwner releasingIdentity = documentIdentity;
                 documentIdentity = null;
-                foreach (object font in releasing)
-                    Free(font);
-                if (releasingIdentity != null)
-                    releasingIdentity.Dispose();
+                Action cleanup = () =>
+                {
+                    foreach (object font in releasing)
+                        releaseFont(font);
+                    if (releasingIdentity != null)
+                        releasingIdentity.Dispose();
+                };
+                if (background)
+                    System.Threading.ThreadPool.QueueUserWorkItem(unused => cleanup());
+                else
+                    cleanup();
+            }
+
+            // Navigation runs inside the low-level hook. Invalidate its undo
+            // ticket immediately, but never wait there for Word to release COM
+            // font/document references: Word can itself be waiting on that hook.
+            internal void Retire()
+            {
+                lock (this)
+                {
+                    if (disposed)
+                        return;
+                    disposed = true;
+                    if (users == 0)
+                        FreeFonts(true);
+                }
             }
 
             public void Dispose()
@@ -506,13 +530,13 @@ namespace KeyJaya
             }
         }
 
-        static void RestoreFonts(FontSnapshot snapshot, object result, int start, Func<bool> context)
+        static void RestoreFonts(FontSnapshot snapshot, object result, int start, Func<bool> context, VisibleMap verifiedMap)
         {
             object[] fonts = snapshot.Acquire();
             try
             {
-                var map = Visible(result);
-                if (map == null || map.Value != snapshot.Original)
+                var map = verifiedMap;
+                if (map == null || map.Start != start || map.Value != snapshot.Original)
                     throw new InvalidOperationException("Font restoration text changed");
                 for (int n = 0; n < fonts.Length; n++)
                 {
@@ -539,7 +563,9 @@ namespace KeyJaya
 
         public static bool SupportedStory(int story)
         {
-            return story == 1 || story == 2 || story == 3 || story >= 6 && story <= 11;
+            // Comment text and replies use wdCommentsStory (4). They retain the
+            // same foreground, document, range, formatting and undo checks.
+            return story >= 1 && story <= 4 || story >= 6 && story <= 11;
         }
 
         // Word's UIA character endpoints can disagree at the first character after a
@@ -623,6 +649,38 @@ namespace KeyJaya
                     Free(scope);
                     Free(selection);
                     Free(app);
+                }
+            }
+
+            // Called only after the native transaction verifies this selection.
+            // It shares that request's projection, never a map from an earlier edit.
+            internal static ReplayAnchor FromVerifiedSelection(IntPtr owner, string expected, object document, object scope, VisibleMap map, int kind, FontSnapshot continuation = null)
+            {
+                object font = null, tail = null;
+                try
+                {
+                    int length = map == null ? -1 : SelectionFormatting.WordOwnedLength(expected, map.Value, map.Value.Length);
+                    if (document == null || scope == null || length < 1 || !SupportedStory(kind))
+                        return null;
+                    int italic = int.MinValue;
+                    if (continuation == null || !continuation.TryContinuation(document, map.Start, kind, out italic))
+                    {
+                        tail = Range(scope, map.NativeOffset(length - 1), map.NativeOffset(length));
+                        font = Get(tail, "Font");
+                        italic = Convert.ToInt32(Get(font, "Italic"));
+                    }
+
+                    Detail("continuation captured from transaction italic=" + italic + " length=" + length);
+                    return new ReplayAnchor(owner, map.Start, kind, expected, document, italic, map);
+                }
+                catch
+                {
+                    return null;
+                }
+                finally
+                {
+                    Free(font);
+                    Free(tail);
                 }
             }
 
@@ -996,14 +1054,25 @@ namespace KeyJaya
             }
         }
 
-        public static bool Replace(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics = null, bool retain = true, string balaramWordFont = null, FontSnapshot restoreFonts = null, Action<FontSnapshot> captureFonts = null, ItalicSpan[] fontSpans = null, ReplayAnchor replay = null)
+        internal static bool ApplyItalic(object portion, object font, ItalicSpan span)
         {
-            return ReplaceCore(owner, input, output, context, out handled, italics, retain, balaramWordFont, restoreFonts, captureFonts, fontSpans, false, replay);
+            if (!span.Force && (Convert.ToInt32(Get(font, "Bold")) == -1 || DisplayStyle(portion)))
+                return false;
+            int wanted = span.Italic ? -1 : 0;
+            if (Convert.ToInt32(Get(font, "Italic")) == wanted)
+                return false;
+            Set(font, "Italic", wanted);
+            return true;
         }
 
-        public static bool ReplaceExpansion(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics = null, bool retain = false, ReplayAnchor replay = null)
+        public static bool Replace(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics = null, bool retain = true, string balaramWordFont = null, FontSnapshot restoreFonts = null, Action<FontSnapshot> captureFonts = null, ItalicSpan[] fontSpans = null, ReplayAnchor replay = null, FontSnapshot continuationFonts = null, Action<ReplayAnchor> captureReplay = null)
         {
-            return ReplaceCore(owner, input, output, context, out handled, italics, retain, null, null, null, null, true, replay);
+            return ReplaceCore(owner, input, output, context, out handled, italics, retain, balaramWordFont, restoreFonts, captureFonts, fontSpans, false, replay, continuationFonts, captureReplay);
+        }
+
+        public static bool ReplaceExpansion(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics = null, bool retain = false, ReplayAnchor replay = null, Action<ReplayAnchor> captureReplay = null)
+        {
+            return ReplaceCore(owner, input, output, context, out handled, italics, retain, null, null, null, null, true, replay, null, captureReplay);
         }
 
         public static ItalicSpan[] MergeVerseSpans(string output, ItalicSpan[] input)
@@ -1020,7 +1089,7 @@ namespace KeyJaya
                     bool gap = span.Start >= begin;
                     for (int n = begin; gap && n < span.Start; n++)
                         gap = n < output.Length && (char.IsWhiteSpace(output[n]) || char.IsPunctuation(output[n]));
-                    if (previous.Force && span.Force && gap)
+                    if (previous.Italic && span.Italic && previous.Force && span.Force && gap)
                     {
                         merged[merged.Count - 1] = new ItalicSpan(previous.Start, span.Start + span.Length - previous.Start, true);
                         continue;
@@ -1033,10 +1102,12 @@ namespace KeyJaya
             return merged.ToArray();
         }
 
-        static bool ReplaceCore(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics, bool retain, string balaramWordFont, FontSnapshot restoreFonts, Action<FontSnapshot> captureFonts, ItalicSpan[] fontSpans, bool expansion, ReplayAnchor replay)
+        static bool ReplaceCore(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics, bool retain, string balaramWordFont, FontSnapshot restoreFonts, Action<FontSnapshot> captureFonts, ItalicSpan[] fontSpans, bool expansion, ReplayAnchor replay, FontSnapshot continuationFonts, Action<ReplayAnchor> captureReplay)
         {
-            handled = WordPasteOptions.IsWord(owner);
+            handled = WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner);
             if (!handled)
+                return false;
+            if (!WordPasteOptions.DocumentFocused(owner))
                 return false;
             object app = null, window = null, selection = null, selectionRange = null, document = null, undo = null, whole = null, nativeStory = null;
             bool begun = false, changed = false, ended = false;
@@ -1098,9 +1169,19 @@ namespace KeyJaya
                     throw new InvalidOperationException("Original selection projection unavailable");
                 if (captureFonts != null)
                     captured = CaptureFonts(document, whole, start, input, initialMap);
+                if (replay == null && captureReplay != null)
+                {
+                    replay = ReplayAnchor.FromVerifiedSelection(owner, input, document, whole, initialMap, storyType, continuationFonts ?? captured);
+                    if (replay != null)
+                        captureReplay(replay);
+                }
+
                 object typingFont = Get(selection, "Font");
                 objects.Add(typingFont);
                 typingItalic = Convert.ToInt32(Get(typingFont, "Italic"));
+                int originalTypingItalic;
+                if (continuationFonts != null && continuationFonts.TryContinuation(document, start, storyType, out originalTypingItalic))
+                    typingItalic = originalTypingItalic;
                 undo = Get(app, "UndoRecord");
                 if (Convert.ToInt32(Get(undo, "CustomRecordLevel")) != 0)
                     return false;
@@ -1156,12 +1237,8 @@ namespace KeyJaya
                             {
                                 portion = Range(result, segment[0], segment[1]);
                                 font = Get(portion, "Font");
-                                if (span.Force || Convert.ToInt32(Get(font, "Bold")) != -1 && !DisplayStyle(portion))
-                                {
-                                    Set(font, "Italic", -1);
+                                if (ApplyItalic(portion, font, span))
                                     changed = true;
-                                }
-
                                 Free(font);
                                 font = null;
                                 Free(portion);
@@ -1230,7 +1307,7 @@ namespace KeyJaya
                 {
                     if (!context())
                         throw new InvalidOperationException("Font restoration context changed");
-                    RestoreFonts(restoreFonts, result, start, context);
+                    RestoreFonts(restoreFonts, result, start, context, resultMap);
                     changed = true;
                 }
 

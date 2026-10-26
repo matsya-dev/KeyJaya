@@ -67,6 +67,18 @@ foreach ($name in $names) {
     }
     if ($name -eq 'WordSnapshotTests') {
         $compilerArguments += Join-Path $root 'tests/contracts/WordApplicationTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordCommentFocusTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordNavigationTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordTransactionReuseTests.cs'
+    }
+    if ($name -eq 'ExcelCellTests') {
+        $compilerArguments += Join-Path $root 'tests/contracts/ExcelTransactionTests.cs'
+    }
+    if ($name -eq 'ShortcutSettingsTests') {
+        $compilerArguments += Join-Path $root 'tests/contracts/WordShortcutTests.cs'
+    }
+    if ($name -eq 'BookStyleTests') {
+        $compilerArguments += Join-Path $root 'tests/contracts/ControlItalicTests.cs'
     }
     if ($name -eq 'StandaloneTests') {
         $compilerArguments += @('src/DistributionFiles.cs', 'src/InstallTransaction.cs', 'tests/contracts/DistributionTests.cs') |

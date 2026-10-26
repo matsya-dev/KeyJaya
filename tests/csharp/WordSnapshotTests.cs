@@ -9,6 +9,87 @@ namespace KeyJaya
         public static int Main()
         {
             int passed = 0;
+            foreach (string host in new[]
+            {
+                "_WwG",
+                "NetUIHWND",
+                "Edit",
+                "RichEdit60W",
+                "Chrome_RenderWidgetHostHWND",
+                "OpusApp",
+                "",
+                null
+            }
+
+            )
+            {
+                if (WordCommentFocus.HostClass(host) != (host == "_WwG" || host == "NetUIHWND"))
+                    throw new Exception("Modern comment host boundary changed");
+                passed++;
+            }
+
+            foreach (string id in new[]
+            {
+                "cardEditor_4_025af5b1-b25b-41c0-84dc-c3332098b9e3",
+                "cardEditor_4_1379485682"
+            }
+
+            )
+            {
+                if (!WordCommentFocus.EditorId(id))
+                    throw new Exception("Modern comment/reply editor rejected");
+                passed++;
+            }
+
+            foreach (string id in new[]
+            {
+                null,
+                "",
+                "cardEditor_",
+                "CardEditor_4_1",
+                "Find",
+                "Body",
+                "draftCancelButton_4_1"
+            }
+
+            )
+            {
+                if (WordCommentFocus.EditorId(id))
+                    throw new Exception("Unrelated modern-comment control accepted as editor");
+                passed++;
+            }
+
+            foreach (string id in new[]
+            {
+                "draftCardRoot_4_025af5b1-b25b-41c0-84dc-c3332098b9e3",
+                "cardRoot_4_1379485682"
+            }
+
+            )
+            {
+                if (!WordCommentFocus.CardId(id))
+                    throw new Exception("Modern comment/reply card ancestor rejected");
+                passed++;
+            }
+
+            foreach (string id in new[]
+            {
+                null,
+                "",
+                "draftCardRoot_",
+                "cardRoot_",
+                "CardRoot_4_1",
+                "cardEditor_4_1",
+                "Body"
+            }
+
+            )
+            {
+                if (WordCommentFocus.CardId(id))
+                    throw new Exception("Unrelated control accepted as comment-card ancestry");
+                passed++;
+            }
+
             var originalMap = WordSelection.VisibleMap.Create("raja", 0, 4, new int[0], new int[0]);
             var insertedA = WordSelection.VisibleMap.Create("ā", 1, 2, new int[0], new int[0]);
             var editedMap = originalMap.Edited(1, 1, insertedA, 1);
@@ -181,7 +262,7 @@ namespace KeyJaya
 
             for (int story = 1; story <= 17; story++)
             {
-                bool wanted = story == 1 || story == 2 || story == 3 || story >= 6 && story <= 11;
+                bool wanted = story >= 1 && story <= 4 || story >= 6 && story <= 11;
                 if (WordSelection.SupportedStory(story) != wanted)
                     throw new Exception("Unsupported Word story admitted");
                 passed++;
@@ -228,6 +309,9 @@ namespace KeyJaya
                 throw new Exception("Repeated immediate disposal retained ownership");
             passed++;
             passed += WordApplicationTests.Run();
+            passed += WordCommentFocusTests.Run();
+            passed += WordNavigationTests.Run();
+            passed += WordTransactionReuseTests.Run();
             Console.WriteLine("PASS: " + passed + " FAIL: 0");
             return 0;
         }

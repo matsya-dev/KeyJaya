@@ -62,6 +62,23 @@ After an unsupported character, such as a space, backtick types normally.
 Type `Krishna` and **tap Left Ctrl by itself** to get `Kṛṣṇa`. Ordinary shortcuts
 such as Ctrl+C and Ctrl+V continue to work.
 
+With **Auto-italicize conversions** enabled, the first Ctrl tap italicizes an
+already-correct Sanskrit/Bengali spelling without changing it: `bhakti` → *bhakti*,
+`nitya` → *nitya*, and `dvijas` → *dvijas*. Later taps cycle alternative spellings
+and eventually restore the original spelling and formatting. If there are no
+alternatives, Ctrl cycles between italic and the original formatting.
+
+Individual word conversions can also italicize loanwords such as `dharma`, `guru`,
+`yoga` and `karma`, including their plurals. Exactly one selected word counts as
+an individual conversion. Proper names retain regular type, and ordinary English
+protection remains. Formatting requires an editor surface that supports it;
+Word comments and replies keep their current formatting.
+
+These shortcuts also work while writing or replying to Word comments, in the
+Comments panel and contextual bubbles as well as the classic editor. Place the
+typing caret inside the comment or reply before converting. Modern comment edits
+keep the comment's current formatting.
+
 The caret can be inside an existing word, directly after it, or after attached
 punctuation. A trailing space separates it from that word. Repeated taps cycle
 available spellings and the original plain spelling continuously. For example:
@@ -101,6 +118,12 @@ individual words to cycle their spellings.
 
 Converted selections remain selected. If you immediately continue typing while a
 conversion is finishing, queued typing follows the converted passage at its end.
+
+For selections containing several words, regular-type loanword exceptions such
+as `dharma`, `guru`, `yoga` and `karma` (and their plurals) are made regular even
+if they were already italic. Other eligible Sanskrit/Bengali terms become italic,
+including words whose spelling needs no diacritics. Complete Sanskrit compounds
+such as *bhakti-yoga*, *nitya-dharma* and *guru-sevā* are treated as single terms.
 
 ### Spell out a number
 
@@ -311,10 +334,12 @@ Enter as a word ending. `lets` / `Lets` become `let’s` / `Let’s`.
 
 **Auto-italicize conversions** is enabled by default. It styles eligible
 Sanskrit/Bengali terms throughout a converted selection, including words that
-already have diacritics. Names, places, festivals, English loanwords such as
-`guru` and `yoga`, and editorial exceptions remain regular, following the app's
-BBT/BVT style rules. Name context can distinguish a personal name from an ordinary
-term.
+already have diacritics. Names, places, festivals and editorial exceptions follow
+the app's BBT/BVT style rules. Passage conversions keep English loanwords such as
+`guru` and `yoga` regular; individual word conversions can italicize them. Name
+context can distinguish a personal name from an ordinary term. This setting
+controls both individual-word italics and passage formatting; turning it off
+disables both.
 
 Complete inserted Sanskrit/Bengali verses are italicized. In translations, only
 eligible terms gain italics; proper names and English remain regular.
@@ -344,6 +369,12 @@ and monitor scaling. The screenshot shows the default light-theme appearance.
 - **Customize shortcuts…** changes all eight actions. Letter and word actions
   can also use function keys or supported shortcut chords. Save to apply changes,
   or restore defaults. The same window is available from the cheat sheet.
+  **Check Word conflicts…** in this window compares current Word assignments with
+  proposed KeyJaya bindings before you save. It also checks six Left/Right
+  navigation chords, including Ctrl+Shift+Left. Word must already be open. The
+  check covers the active window in each accessible Word instance and changes no
+  assignments, templates or documents. An overlap means KeyJaya takes priority
+  while enabled; a different navigation assignment may be intentional.
 - **Start with Windows** controls automatic launch at sign-in.
 - **Pause KeyJaya** temporarily restores ordinary app key behavior; choose
   **Resume KeyJaya** to reactivate it.
@@ -358,12 +389,22 @@ These editing areas have been exercised during development:
 
 | App | Editing areas and notes |
 | --- | --- |
-| Microsoft Word | Body text, footnotes/endnotes, Unicode/Balarama fonts, Track Changes, pasted text and Paste Options |
+| Microsoft Word | Body text, footnotes/endnotes, Comments panel and contextual comment/reply bubbles, Unicode/Balarama fonts, Track Changes, pasted text and Paste Options |
 | Adobe InDesign | Text frames, footnotes/endnotes, Text/GREP Find/Change fields; GREP codes are preserved |
 | Zen/browser editors, ChatGPT, WhatsApp | Editable plain-text and rich-text fields |
 | Obsidian | Writable Markdown, including Live Preview |
-| Microsoft Excel | Cells in edit mode with a visible text caret; keep **View → Formula Bar** enabled |
+| Microsoft Excel | Cells in edit mode with a visible text caret, including word/letter conversion and selected passages across lines; keep **View → Formula Bar** enabled |
 | Adobe Acrobat | Sticky-note comments, replies, and text-box comments |
+
+In Excel, selected passages can span line breaks and remain selected after
+conversion. Emoji and combining accents elsewhere in a cell no longer block a
+nearby word conversion when navigation can avoid them. Selections or navigation
+through character clusters whose cursor behavior is unverified can still be
+skipped. Formula-like buffers and cells longer than 4,096 characters remain
+excluded.
+
+Word comments inherit the comment field's current formatting; KeyJaya does not
+add automatic italics there.
 
 App versions and controls can behave differently; custom, protected, or elevated
 editors may not support conversion. Physical installation on a separate user's

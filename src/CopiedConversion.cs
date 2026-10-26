@@ -58,12 +58,14 @@ namespace KeyJaya
         public readonly string Text;
         public readonly string[] Choices;
         public readonly bool Expansion, Contextual;
-        public WordConversionPlan(string text, string[] choices, bool expansion = false, bool contextual = false)
+        public readonly int OriginalFormattingIndex;
+        public WordConversionPlan(string text, string[] choices, bool expansion = false, bool contextual = false, int originalFormattingIndex = -1)
         {
             Text = text;
             Choices = choices;
             Expansion = expansion;
             Contextual = contextual;
+            OriginalFormattingIndex = originalFormattingIndex;
         }
     }
 

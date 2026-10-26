@@ -11,7 +11,7 @@ namespace KeyJaya
     public sealed class ShortcutWindow : ThemeWindow
     {
         readonly Font windowFont = new Font("Segoe UI", 9);
-        public ShortcutWindow(ShortcutSettings current, Action<IDictionary<string, string>> save)
+        public ShortcutWindow(ShortcutSettings current, Action<IDictionary<string, string>> save, Action<ShortcutSettings> checkWord = null)
         {
             Text = "KeyJaya shortcuts";
             Font = windowFont;
@@ -78,6 +78,27 @@ namespace KeyJaya
             buttons.Controls.Add(cancel);
             buttons.Controls.Add(apply);
             buttons.Controls.Add(defaults);
+            if (checkWord != null)
+            {
+                var check = new ThemeButton
+                {
+                    Text = "Check Word conflicts…",
+                    AutoSize = true
+                };
+                buttons.Controls.Add(check);
+                check.Click += (sender, args) =>
+                {
+                    try
+                    {
+                        checkWord(new ShortcutSettings(null, boxes.ToDictionary(row => row.Key, row => row.Value.Text)));
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(this, ex.Message, "Shortcuts could not be checked", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                };
+            }
+
             layout.Controls.Add(buttons, 0, 9);
             layout.SetColumnSpan(buttons, 2);
             Controls.Add(layout);
