@@ -836,3 +836,67 @@ Evidence is beneath `out/ctrl-italics-speed`: `focused-results.json`,
 `manual-word-check.json`, guarded activation/final-verification records and the
 prior executable backup. The timing summarizer emits only phase
 timings and generic action metadata, without document text.
+
+## Four review findings resolved — 27 October 2026
+
+The review of checkpoint `da9c8df` identified four actionable formatting/undo
+defects. Each is addressed in the development candidate:
+
+- Markdown emphasis removal validates opening/closing delimiter boundaries and
+  escape parity, including context immediately outside a selection. Literal
+  identifiers such as `note_dharma_id` retain their underscores. Reconstruction
+  preserves bold and avoids stray emphasis markers beside punctuation.
+- Native Word font capture accepts the same bounded one-word shapes as Ctrl
+  classification, including surrounding whitespace/punctuation, up to 321
+  characters. Original fonts remain owned while the Ctrl cycle is active, even
+  after the separate Backspace deadline. A missing snapshot cannot silently
+  commit an original-formatting state. Ordinary invalidation still retires
+  references without blocking navigation.
+- Formatting-only conversions arm manual Backspace undo. The saved original
+  anchor passes explicitly into restoration after the current anchor is cleared;
+  supported rich editors restore the original italic payload and InDesign uses
+  its native snapshot. Restoration does not run automatic style policy again.
+  Modern Word comments retain their text-only restoration path.
+- Both positive and regular-type policy respect the established protected
+  literal ranges. URLs, email addresses, paths and literal comments receive no
+  new spans; eligible terms on either side still follow normal policy.
+
+Verification completed:
+
+- All **44 isolated suites passed: 26,998,434 assertions, zero failures**.
+- Final Markdown selection-boundary refinements passed **five focused suites,
+  647,601 assertions**, including **660 Ctrl-italics assertions** and **22 native
+  font-cycle/undo assertions**. The latter call production capture, restoration,
+  expiry and undo-decision code against fake ranges; they preserve differing
+  font names, sizes, bold and italic states for each captured character.
+- The punctuation regression was observed failing before its correction. The
+  earlier review's production probes record the identifier corruption,
+  protected-range spans and missing formatting evidence before these fixes.
+- All **26 Python developer-tool tests**, **19 compiled-app checks**, **107 C#
+  formatting checks**, **1,671 development-audit checks**, pinned Hindi-source
+  checks, **42 local documentation links**, **4 image headers** and
+  `git diff --check` passed. Python installer/network operations were mocked.
+- All **17 engine benchmarks**, with 301 warm samples each, passed their budgets.
+  Highest warm p95: **4.490 ms**; initialization: **219.880 ms**. These are engine
+  measurements, not native editor response measurements.
+
+The app-only executable passed the compiled probe. KeyJaya was already closed;
+only its installed executable was atomically replaced, preserving that state.
+The previous executable was backed up and verified. Separate read-only checks
+confirmed the installed executable matches the tested candidate, all **47
+protected profile files** and startup registration are unchanged, and no app was
+started or stopped. The SHA-256 is
+`8DBFDCDA574554A30B974A7AEB29AB739041648F7C888779DCEF069A7163AFA1`.
+
+No agent desktop input or working-document access was used. The new native
+interaction cases have automated model/helper coverage; visible browser/InDesign
+Backspace and the padded/delayed Word cases were not physically exercised in this
+pass. The earlier user confirmations apply to the preceding build. No installer
+was built or run, nothing was pushed/published, and version/release baseline 1.9.6
+remains unchanged.
+
+Evidence is beneath `out/review-fixes`: `full44-results.json`,
+`final-focused-results.json`, `compiled-checks.json`, guarded stopped-app update,
+backup and final-verification records. Earlier reproduction output is beneath
+`out/reviews/checkpoint-da9c8df`. The engine report is under
+`out/benchmarks/run-31fedea549dd49129713434757ed3b0e`.

@@ -60,9 +60,15 @@ namespace KeyJaya
             }
 
             var compounds = Compounds.Matches(output);
+            var literals = Protected.Matches(output);
+            int literalIndex = 0;
             for (int index = 0; index < compounds.Count; index++)
             {
                 Match word = compounds[index];
+                while (literalIndex < literals.Count && literals[literalIndex].Index + literals[literalIndex].Length <= word.Index)
+                    literalIndex++;
+                if (literalIndex < literals.Count && literals[literalIndex].Index < word.Index + word.Length)
+                    continue;
                 string key = IndicStyle.Key(word.Value, mode), personalRule;
                 bool personalRoman = italicOverrides.TryGetValue(key, out personalRule) && (personalRule == "roman" || personalRule == "name" && char.IsUpper(word.Value[0]));
                 bool title = IndicStyle.Titles.Contains(key) || (key == "sri" || key == "srimad") && index + 1 < compounds.Count && IndicStyle.Titles.Contains(IndicStyle.Key(compounds[index + 1].Value, mode)) && Regex.IsMatch(output.Substring(word.Index + word.Length, compounds[index + 1].Index - word.Index - word.Length), @"^ +$");

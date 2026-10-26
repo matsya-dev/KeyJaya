@@ -493,7 +493,7 @@ namespace KeyJaya
 
         static FontSnapshot CaptureFonts(object document, object story, int start, string input, VisibleMap verifiedMap)
         {
-            if (input.Length > 160 || input.IndexOfAny(new[] { ' ', '\r', '\n', '\t' }) >= 0)
+            if (string.IsNullOrEmpty(input) || input.Length > 321 || !Core.SingleControlWord(input) && (input.Length > 160 || input.IndexOfAny(new[] { ' ', '\r', '\n', '\t' }) >= 0))
                 return null;
             int storyType = Convert.ToInt32(Get(story, "StoryType"));
             var snapshot = new FontSnapshot(document, start, storyType, input);

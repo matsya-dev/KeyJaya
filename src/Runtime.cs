@@ -135,17 +135,7 @@ namespace KeyJaya
                 else if (manualWordAnchor != null)
                     manualWordAnchor.FinishRecord();
             };
-            fontExpiry.Tick += (sender, args) =>
-            {
-                lock (sync)
-                {
-                    if (wordUndoFonts == null || DateTime.UtcNow >= expiry)
-                    {
-                        ClearWordUndoFonts();
-                        fontExpiry.Stop();
-                    }
-                }
-            };
+            fontExpiry.Tick += (sender, args) => ExpireWordUndoFonts(DateTime.UtcNow);
             root = path;
             shortcutSettings = new ShortcutSettings(Path.Combine(Configuration.Folder(path), "shortcuts.ini"));
             probe = dryRun;
@@ -394,6 +384,20 @@ namespace KeyJaya
             wordUndoFonts = null;
             if (retiring != null)
                 retiring.Retire();
+        }
+
+        void ExpireWordUndoFonts(DateTime now)
+        {
+            lock (sync)
+            {
+                // Backspace has a short deadline, but Ctrl cycling can resume
+                // after a pause. Keep its original fonts until that cycle ends.
+                if (wordUndoFonts == null || now >= expiry && caretWords.Original == null)
+                {
+                    ClearWordUndoFonts();
+                    fontExpiry.Stop();
+                }
+            }
         }
 
         void ResetInput(bool preserveControl = false)
@@ -1383,6 +1387,14 @@ namespace KeyJaya
                     lock (sync)
                         originalFonts = wordUndoFonts;
                     bool restoringOrigin = repeat && (originalFormattingIndex >= 0 ? restoreCycleFormatting : originalFonts != null && next == originalFonts.Original);
+                    if (restoringOrigin && originalFonts == null && WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner))
+                    {
+                        lock (sync)
+                            caretWords.Clear();
+                        Diagnostic("word original formatting unavailable; cycle retired without replacement");
+                        return;
+                    }
+
                     ItalicSpan[] wordItalics = restoringOrigin ? null : formattingSettings.Italicize ? core.ControlItalics(cycleInput, next, mode, true, edit.ContextThroughWord()) : null;
                     bool wordHandled;
                     Action<WordSelection.ReplayAnchor> captureReplay = manualInputActive ? (Action<WordSelection.ReplayAnchor>)(anchor => manualWordAnchor = anchor) : null;
@@ -1438,7 +1450,7 @@ namespace KeyJaya
                         letters.Clear();
                         clipboardCycle.Clear();
                         letterUndo = false;
-                        wordUndo = !retainWordSelection && !shortExpansion && (next != original || repeat || WordPasteOptions.IsWord(owner) && wordUndoFonts != null);
+                        wordUndo = CaretWordCycle.NeedsUndo(original, next, retainWordSelection, shortExpansion, repeat, WordPasteOptions.IsWord(owner) && wordUndoFonts != null, wordFormatting && wordItalics != null && wordItalics.Length > 0);
                         wordUndoOffset = originalOffset;
                         if (!repeat)
                             wordUndoAnchor = edit;
@@ -1490,15 +1502,18 @@ namespace KeyJaya
         // Called by caret discovery's worker. Clipboard API capture/restore stays on the UI STA.
         // Direct input handles only short unformatted text. Multiline/long/rich
         // output uses a temporary clipboard payload, content proof, then restoration.
-        bool ReplaceRichCaret(SafeEdit edit, string output, string mode, Func<bool> context, string trigger = null, bool individual = false, bool restoring = false, bool retain = false)
+        bool ReplaceRichCaret(SafeEdit edit, string output, string mode, Func<bool> context, string trigger = null, bool individual = false, bool restoring = false, bool retain = false, SafeEdit savedOriginal = null)
         {
+            SafeEdit original;
+            lock (sync)
+                original = savedOriginal ?? wordUndoAnchor;
             if (edit.UsesNativeReplacement)
             {
                 SafeEdit origin = null;
                 lock (sync)
                 {
                     if (restoring || !individual && caretWords.Original == output)
-                        origin = wordUndoAnchor;
+                        origin = original;
                 }
 
                 return context() && edit.ReplaceInDesign(output, retain, origin != null ? null : formattingSettings.Italicize ? core.ControlItalics(SafeEdit.MarkdownWord(edit.Expected), output, mode, individual) : null, origin);
@@ -1506,9 +1521,9 @@ namespace KeyJaya
 
             if (!edit.MarkdownAllowed)
                 return false;
-            byte[] html = ConversionHtml(edit.Window, output, mode, trigger ?? Core.CtrlScriptureTrigger(SafeEdit.MarkdownWord(edit.Expected), mode), individual);
-            if (restoring && !edit.IsMarkdownSource && RichClipboardTarget(edit.Window))
-                html = RichClipboard.Html(output, new[] { new ItalicSpan(0, output.Length, true, wordUndoAnchor != null && wordUndoAnchor.InitialItalic == true) });
+            byte[] html = restoring ? null : ConversionHtml(edit.Window, output, mode, trigger ?? Core.CtrlScriptureTrigger(SafeEdit.MarkdownWord(edit.Expected), mode), individual);
+            if (restoring && !edit.IsMarkdownSource && RichClipboardTarget(edit.Window) && !WordCommentFocus.IsCommentFocus(edit.Window))
+                html = RichClipboard.RestoreItalics(output, original != null && original.InitialItalic == true);
             if (!Native.TextNeedsClipboard(output, html != null))
                 return context() && edit.ExactSelection() && Native.TypeText(output);
             Diagnostic("caret replacement uses clipboard characters=" + output.Length + " formatted=" + (html != null));
@@ -2139,7 +2154,7 @@ namespace KeyJaya
                             replaced = WordSelection.Replace(owner, output, original, context, out handled, null, false, null, fonts, null, null, manualInputActive ? manualWordAnchor : null);
                         }
                         else
-                            replaced = edit.UsesNativeReplacement ? edit.ReplaceInDesign(original, false, null, wordAnchor) : Native.TypeText(original);
+                            replaced = ReplaceRichCaret(edit, original, originalMode ?? "unicode", context, null, true, true, false, wordAnchor);
                         if (!replaced)
                             return;
                         ManualCommitted(edit, original);

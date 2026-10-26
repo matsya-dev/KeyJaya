@@ -91,6 +91,20 @@ on the Word UI thread that is itself waiting for that hook. An active font lease
 keeps its references until its existing user releases them; retired snapshots
 cannot authorize or acquire another edit.
 
+Original Word fonts are retained while their Ctrl-word cycle remains active,
+including after the short Backspace deadline. Cycle completion/invalidation and
+ordinary input still retire the ticket; expiry cannot create an original-format
+state without evidence. A one-word selection can include bounded surrounding
+whitespace or punctuation, so font capture accepts the same shapes as word
+classification, with a 321-character ceiling. Native document, story, start,
+expected-text and current-context checks still authorize each restoration.
+
+Formatting-only rich-editor changes use the same manual Backspace decision as
+text-changing words. The saved original anchor passes explicitly into rich/native
+restoration, because accepting Backspace retires the resident's current anchor.
+Original text is restored without running automatic italic policy again.
+Modern comment fields retain their text-only restoration path.
+
 Typing in resident-owned settings windows and message boxes bypasses conversion
 by process ownership, so new dialog titles need no hook exception. Registered
 shortcut dispatch uses the same guard before acquiring an input hold. The

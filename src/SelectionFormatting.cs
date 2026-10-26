@@ -63,7 +63,46 @@ namespace KeyJaya
             return before.Success && after.Success && before.Value[0] == after.Value[0] && before.Length % 2 == 1 && after.Length % 2 == 1;
         }
 
-        static readonly Regex ItalicRuns = new Regex(@"(?<![\\*_])(?<mark>\*{3}|\*|_{3}|_)(?<body>[^*_\r\n]+)\k<mark>(?![*_])");
+        static readonly Regex ItalicRuns = new Regex(@"(?<![*_])(?<mark>\*{3}|\*|_{3}|_)(?<body>[^*_\r\n]+)\k<mark>(?![*_])");
+        static bool DelimiterPunctuation(char value)
+        {
+            return char.IsPunctuation(value) || char.IsSymbol(value);
+        }
+
+        static bool Escaped(string text, int at, string prefix)
+        {
+            int slashes = 0, previous = at - 1;
+            while (previous >= 0 && text[previous] == '\\')
+            {
+                slashes++;
+                previous--;
+            }
+
+            if (previous < 0)
+                for (int n = prefix.Length - 1; n >= 0 && prefix[n] == '\\'; n--)
+                    slashes++;
+            return slashes % 2 == 1;
+        }
+
+        static bool ItalicRun(string text, Match match, string prefix, string suffix)
+        {
+            int length = match.Groups["mark"].Length;
+            int open = match.Index, close = match.Index + match.Length - length;
+            if (Escaped(text, open, prefix) || Escaped(text, close, prefix))
+                return false;
+            char before = open > 0 ? text[open - 1] : prefix.Length > 0 ? prefix[prefix.Length - 1] : '\n';
+            char after = text[open + length];
+            bool left = !char.IsWhiteSpace(after) && (!DelimiterPunctuation(after) || char.IsWhiteSpace(before) || DelimiterPunctuation(before));
+            bool right = !char.IsWhiteSpace(before) && (!DelimiterPunctuation(before) || char.IsWhiteSpace(after) || DelimiterPunctuation(after));
+            if (!left || text[open] == '_' && right && !DelimiterPunctuation(before))
+                return false;
+            before = text[close - 1];
+            after = close + length < text.Length ? text[close + length] : suffix.Length > 0 ? suffix[0] : '\n';
+            left = !char.IsWhiteSpace(after) && (!DelimiterPunctuation(after) || char.IsWhiteSpace(before) || DelimiterPunctuation(before));
+            right = !char.IsWhiteSpace(before) && (!DelimiterPunctuation(before) || char.IsWhiteSpace(after) || DelimiterPunctuation(after));
+            return right && (text[close] != '_' || !left || DelimiterPunctuation(after));
+        }
+
         public static string Apply(string output, Func<string, ItalicSpan[]> policy, string prefix = "", string suffix = "")
         {
             if (InFence(prefix))
@@ -72,7 +111,7 @@ namespace KeyJaya
             var mask = Protected(output);
             string regularized = ItalicRuns.Replace(output, match =>
             {
-                if (mask.Skip(match.Index).Take(match.Length).Any(x => x))
+                if (!ItalicRun(output, match, prefix, suffix) || mask.Skip(match.Index).Take(match.Length).Any(x => x))
                     return match.Value;
                 var body = match.Groups["body"];
                 bool[] italic = Enumerable.Repeat(true, body.Length).ToArray();
@@ -86,9 +125,32 @@ namespace KeyJaya
 
                 if (!changed)
                     return match.Value;
+                // A punctuation-only emphasis fragment beside a regular word
+                // can become literal markup. Leave that punctuation regular.
+                for (int at = 0; at < body.Length;)
+                {
+                    if (!italic[at])
+                    {
+                        at++;
+                        continue;
+                    }
+
+                    int end = at + 1;
+                    while (end < body.Length && italic[end])
+                        end++;
+                    int first = at, last = end;
+                    while (first < last && (char.IsWhiteSpace(body.Value[first]) || DelimiterPunctuation(body.Value[first])))
+                        italic[first++] = false;
+                    while (last > first && (char.IsWhiteSpace(body.Value[last - 1]) || DelimiterPunctuation(body.Value[last - 1])))
+                        italic[--last] = false;
+                    at = end;
+                }
+
                 bool bold = match.Groups["mark"].Length == 3;
                 char marker = match.Groups["mark"].Value[0];
                 var result = new System.Text.StringBuilder();
+                if (bold)
+                    result.Append(new string (marker, 2));
                 for (int at = 0; at < body.Length;)
                 {
                     int end = at + 1;
@@ -102,7 +164,7 @@ namespace KeyJaya
                     else
                     {
                         result.Append(run.Substring(0, leading));
-                        int count = (bold ? 2 : 0) + (italic[at] ? 1 : 0);
+                        int count = italic[at] ? 1 : 0;
                         result.Append(new string (marker, count)).Append(trimmed).Append(new string (marker, count));
                         if (trailing > 0)
                             result.Append(run.Substring(run.Length - trailing));
@@ -111,6 +173,8 @@ namespace KeyJaya
                     at = end;
                 }
 
+                if (bold)
+                    result.Append(new string (marker, 2));
                 return result.ToString();
             });
             return Italicize(regularized, policy(regularized), prefix, suffix);
@@ -142,8 +206,9 @@ namespace KeyJaya
             var mask = Protected(output);
             var alreadyItalic = new bool[output.Length];
             foreach (Match run in ItalicRuns.Matches(output))
-                for (int n = run.Groups["body"].Index; n < run.Groups["body"].Index + run.Groups["body"].Length; n++)
-                    alreadyItalic[n] = true;
+                if (ItalicRun(output, run, prefix, suffix))
+                    for (int n = run.Groups["body"].Index; n < run.Groups["body"].Index + run.Groups["body"].Length; n++)
+                        alreadyItalic[n] = true;
             var result = new System.Text.StringBuilder(output);
             foreach (var span in (spans ?? new ItalicSpan[0]).Where(x => x.Italic).OrderByDescending(x => x.Start))
             {
@@ -338,6 +403,11 @@ namespace KeyJaya
             var utf8 = new System.Text.UTF8Encoding(false);
             int header = utf8.GetByteCount(string.Format(System.Globalization.CultureInfo.InvariantCulture, format, 0, 0, 0, 0)), begin = header + utf8.GetByteCount(start), finish = begin + utf8.GetByteCount(fragment), total = finish + utf8.GetByteCount(end);
             return utf8.GetBytes(string.Format(System.Globalization.CultureInfo.InvariantCulture, format, header, total, begin, finish) + start + fragment + end + "\0");
+        }
+
+        public static byte[] RestoreItalics(string text, bool italic)
+        {
+            return Html(text, new[] { new ItalicSpan(0, text.Length, true, italic) });
         }
     }
 

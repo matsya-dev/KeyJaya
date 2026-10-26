@@ -67,6 +67,8 @@ already-correct Sanskrit/Bengali spelling without changing it: `bhakti` → *bha
 `nitya` → *nitya*, and `dvijas` → *dvijas*. Later taps cycle alternative spellings
 and eventually restore the original spelling and formatting. If there are no
 alternatives, Ctrl cycles between italic and the original formatting.
+Pausing between Ctrl taps keeps the active cycle's original formatting; typing
+or navigating to another editing location starts a new cycle.
 
 Individual word conversions can also italicize loanwords such as `dharma`, `guru`,
 `yoga` and `karma`, including their plurals. Exactly one selected word counts as

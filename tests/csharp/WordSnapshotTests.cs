@@ -312,6 +312,7 @@ namespace KeyJaya
             passed += WordCommentFocusTests.Run();
             passed += WordNavigationTests.Run();
             passed += WordTransactionReuseTests.Run();
+            passed += WordFormattingCycleTests.Run();
             Console.WriteLine("PASS: " + passed + " FAIL: 0");
             return 0;
         }

@@ -135,6 +135,56 @@ namespace KeyJaya
                 string html = RichClipboard.Fragment("bhakti dharma", core.ControlItalics(null, "bhakti dharma", "unicode"));
                 Check(html.Contains("<i>bhakti</i>") && html.Contains("font-style:normal\">dharma</span>"), "rich HTML explicitly carries both italic and regular style");
                 Func<string, ItalicSpan[]> passagePolicy = text => core.ControlItalics(null, text, "unicode");
+                foreach (string identifier in new[]
+                {
+                    "note_dharma_id",
+                    "key_guru_value",
+                    "prefix_yoga_suffix",
+                    "α_karma_β",
+                    "note___dharma___id",
+                    "note_dharma_id and key_guru_value",
+                    @"\_dharma_",
+                    @"*dharma\*"
+                }
+
+                )
+                    Check(MarkdownFormatting.Apply(identifier, passagePolicy) == identifier, "literal underscores and escaped delimiters survive Markdown conversion: " + identifier);
+                Check(MarkdownFormatting.Apply("note_dharma_id and bhakti", passagePolicy) == "note_dharma_id and *bhakti*", "literal identifiers survive while adjacent Sanskrit terms are styled");
+                Check(MarkdownFormatting.Apply("_dharma_ and ___guru___", passagePolicy) == "dharma and __guru__", "valid underscore emphasis is regularized and bold preserved");
+                Check(MarkdownFormatting.Apply("(_dharma_)", passagePolicy) == "(dharma)", "punctuation-delimited underscore emphasis remains supported");
+                Check(MarkdownFormatting.Apply("*dharma,*", passagePolicy) == "dharma,", "regularization does not leave literal emphasis markers around punctuation");
+                Check(MarkdownFormatting.Apply("***dharma,***", passagePolicy) == "**dharma,**", "bold remains around regularized punctuation");
+                Check(MarkdownFormatting.Apply("*dharma—English*", passagePolicy) == "dharma—*English*" && MarkdownFormatting.Apply("*English—dharma*", passagePolicy) == "*English*—dharma", "remaining emphasis has valid boundaries beside punctuation");
+                Check(MarkdownFormatting.Apply("word*dharma*", passagePolicy) == "worddharma", "valid intraword asterisk emphasis differs from literal underscores");
+                Check(MarkdownFormatting.Apply("_dharma_", passagePolicy, "note", "id") == "_dharma_", "selection context prevents intraword underscores from being removed");
+                Check(MarkdownFormatting.Apply("_dharma_", passagePolicy, "\\", "") == "_dharma_", "an escape immediately outside the selection still protects the opening marker");
+                Check(MarkdownFormatting.Apply("_dharma_", passagePolicy, "\\\\", "") == "dharma", "an even number of preceding backslashes leaves real emphasis delimiters");
+                foreach (string mode in new[]
+                {
+                    "unicode",
+                    "balaram",
+                    "plain"
+                }
+
+                )
+                    foreach (string literal in new[]
+                    {
+                        "https://example.test/dharma/karma",
+                        "www.guru.example/dharma",
+                        "user@guru.example",
+                        @"C:\dharma\Krsna.txt",
+                        @"\\guru\dharma\Krsna.txt",
+                        "/* dharma guru Krsna */"
+                    }
+
+                    )
+                    {
+                        Check(core.ControlItalics(null, literal, mode).Length == 0 && core.ControlItalics(null, literal, mode, true).Length == 0, "protected literal has neither italic nor regular spans: " + literal + " " + mode);
+                        string mixed = "bhakti " + literal + " dharma";
+                        var mixedSpans = core.ControlItalics(null, mixed, mode);
+                        Check(StyleAt(mixedSpans, 0) == 1 && StyleAt(mixedSpans, mixed.Length - 1) == -1 && !mixedSpans.Any(span => span.Start < 7 + literal.Length && span.Start + span.Length > 7), "style applies around, never inside, protected literals: " + mode);
+                    }
+
                 Check(MarkdownFormatting.Apply("*dharma* and bhakti", passagePolicy) == "dharma and *bhakti*", "Markdown removes existing exception italics and adds unchanged-word italics");
                 Check(MarkdownFormatting.Apply("***dharma*** and **bhakti**", passagePolicy) == "**dharma** and ***bhakti***", "Markdown preserves bold while changing italics");
                 Check(MarkdownFormatting.Apply("`*dharma*` [bhakti](https://example.test)", passagePolicy) == "`*dharma*` [bhakti](https://example.test)", "Markdown code and links remain unchanged");

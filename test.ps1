@@ -70,6 +70,7 @@ foreach ($name in $names) {
         $compilerArguments += Join-Path $root 'tests/contracts/WordCommentFocusTests.cs'
         $compilerArguments += Join-Path $root 'tests/contracts/WordNavigationTests.cs'
         $compilerArguments += Join-Path $root 'tests/contracts/WordTransactionReuseTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordFormattingCycleTests.cs'
     }
     if ($name -eq 'ExcelCellTests') {
         $compilerArguments += Join-Path $root 'tests/contracts/ExcelTransactionTests.cs'

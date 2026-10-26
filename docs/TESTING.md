@@ -41,6 +41,14 @@ capture and font restoration, including matching/stale font tickets, tracked
 deletions, paragraph markers, provider failure, cancellation and one undo record.
 It never connects to Word or sends desktop input.
 
+`WordFormattingCycleTests` exercises actual native font capture/restoration on
+fake Word ranges, including surrounding whitespace, punctuation, mixed fonts,
+the selection bound and expiry while a Ctrl cycle remains active. It also checks
+the production manual-undo decision and original-italic HTML payload. The fixture
+never starts the resident or connects to Word. Ctrl-italics contracts additionally
+cover literal Markdown identifiers, escaped/bounded emphasis, punctuation and
+protected URLs, email addresses, paths and literal comments in all Roman modes.
+
 Formatting and module-boundary guidance is in
 [Contributing](../CONTRIBUTING.md) and [the code map](ARCHITECTURE.md).
 The selection suite now includes the shared six-profile editor contract matrix.

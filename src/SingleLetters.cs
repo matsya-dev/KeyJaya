@@ -711,6 +711,11 @@ namespace KeyJaya
 
     public sealed class CaretWordCycle
     {
+        public static bool NeedsUndo(string original, string output, bool selected, bool expansion, bool repeat, bool originalWordFonts, bool formattingChange)
+        {
+            return !selected && !expansion && (output != original || repeat || originalWordFonts || formattingChange);
+        }
+
         public string Original { get; private set; }
         public int OriginalFormattingIndex { get; private set; }
 

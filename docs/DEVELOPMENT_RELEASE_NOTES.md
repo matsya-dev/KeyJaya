@@ -56,6 +56,21 @@ remain 1.9.6. No installer or published release has been prepared for this work.
   editor were removed as requested. Existing settings and spelling/style
   configuration remain supported; resident settings windows keep ordinary input.
 
+## Review fixes — 27 October 2026
+
+- Markdown conversion preserves literal identifiers such as `note_dharma_id`
+  and validates emphasis boundaries before removing existing italics. Escaped
+  markers and punctuation remain text rather than becoming stray formatting.
+- Original Word formatting is captured for one-word selections with surrounding
+  whitespace. An active Ctrl cycle retains its formatting evidence through a
+  pause; Backspace keeps its separate immediate-undo deadline.
+- Formatting-only conversions arm Backspace undo in supported rich editors and
+  InDesign. Restoration uses the saved original italic state or native font
+  snapshot instead of treating an unchanged spelling as an untouched word.
+- URLs, email addresses, file paths and protected literal comments are excluded
+  from both italic and regular-type spans. Eligible terms around them retain
+  the individual-word versus passage rules.
+
 ## Verification
 
 The complete 44-suite regression run passed, followed by focused checks for the
