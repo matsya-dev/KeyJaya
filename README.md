@@ -44,7 +44,7 @@ setup details.
 | `Krishna` | Left Ctrl | `Kṛṣṇa` |
 | `Rama` | Left Ctrl repeatedly | `Rāma` → `Ramā` → `Rāmā` → `Rama` |
 | `SP` | Left Ctrl | `Śrīla Prabhupāda` |
-| `a` | Backtick ` | `ā` |
+| `a` | ` [Backtick] | `ā` |
 
 
 ## More information
