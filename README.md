@@ -30,7 +30,7 @@ between ASCII, Unicode, Balarama (Legacy), ITRANS, Devanagari, and Bengali scrip
 1. Download the **KeyJaya Setup** `.exe` from the latest release and run it.
 2. Verify the white **की** icon is in the Windows system tray.
 3. Type `Krishna` in a text field and tap **Left Ctrl** to get `Kṛṣṇa`.
-4. Open **Cheat sheet** from the tray or read the user guide](docs/USER_GUIDE.md) for all shortcuts, script conversion behaviors, triggers,
+4. Open **Cheat sheet** from the tray or read the [user guide](docs/USER_GUIDE.md) for all shortcuts, script conversion behaviors, triggers,
 fonts, and settings.
 
 Requires **Windows x64 and .NET Framework 4.8**. Balarama fonts are supplied
