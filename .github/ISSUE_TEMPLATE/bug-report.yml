@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: KeyJaya version
-      placeholder: "For example: 1.9.5"
+      placeholder: "For example: 1.9.6"
     validations:
       required: true
   - type: input

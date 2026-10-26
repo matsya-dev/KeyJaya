@@ -1,0 +1,29 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,ps1}]
+end_of_line = crlf
+
+[*.{py,md,json,yml,ini}]
+end_of_line = lf
+
+[*.cs]
+csharp_new_line_before_open_brace = all
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_style_namespace_declarations = block_scoped:suggestion
+dotnet_sort_system_directives_first = true
+
+# Runtime index offsets and third-party checksums depend on exact source bytes.
+# Editor defaults must never normalize these files, even if they look like text.
+[{data,third_party}/**]
+charset = unset
+end_of_line = unset
+insert_final_newline = false
+trim_trailing_whitespace = false

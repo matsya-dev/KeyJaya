@@ -1,7 +1,8 @@
 # Runtime data pack
 
-These files are the runtime inputs of KeyJaya 1.9.5.
-The personal email expansion was removed from `short-triggers.tsv`.
+These files are the runtime inputs of KeyJaya 1.9.6.
+Short triggers use the authoritative factory YAML in `assets/`;
+the redundant TSV fallback has been removed. All remaining data files are unchanged.
 This pack repairs 276 scripture record identifiers; every verse and
 translation payload byte and all index offsets remain unchanged by that repair.
 `manifest.json` records byte hashes. `.gitattributes` disables text transformations

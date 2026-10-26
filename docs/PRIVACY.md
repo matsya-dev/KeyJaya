@@ -1,6 +1,6 @@
 # Privacy and local data
 
-This describes the source of KeyJaya 1.9.5, rather than making promises about
+This describes the source of KeyJaya 1.9.6, rather than making promises about
 other software or future releases.
 
 ## Keyboard and editor access

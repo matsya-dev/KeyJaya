@@ -1,5 +1,54 @@
 # Release verification
 
+## KeyJaya 1.9.6 — 26 October 2026
+
+- All **44 isolated suites passed**. The full review run plus the final focused
+  trigger-editor restoration checks total **26,940,784 assertions; zero failures**.
+  All **26 Python developer-tool tests** passed. Both review findings were
+  reproduced before being fixed: first-upgrade BB deletion preservation and
+  unified ordered-replacement precedence.
+- Native Word fault tests passed **34 checks**, including a measured three-second
+  COM stall, disconnected COM cleanup, actual font/italic preservation, one-step
+  native undo, focus-loss rollback after a patch and closed-window queue recovery.
+  The owner physically tapped Ctrl and immediately typed ` next Word` in a
+  separate disposable document while only that Word server was paused for three
+  seconds. All **13 physical-test checks passed**: the word converted, preceding
+  text and every suffix character remained intact, English stayed nonitalic at
+  its original size, modifiers were released and undo restored the original.
+  The helper injected no keys; the running temporary resident performed conversion.
+- The focus fixture now hides only its owned test frame and verifies actual
+  foreground loss before evaluating rollback. This avoids confusing a refused
+  foreground request with a product failure. No production keyboard/clipboard
+  code changed during this final reliability pass.
+- Source-level setup integration passed **25 checks** in PowerShell 7 and 5.1.
+  Locked-file failures at early, middle and final retirements and a failure after
+  all retirements restored exact configuration, migration markers and retired
+  files. The underlying transaction also checks every distribution retirement
+  position as part of `StandaloneTests`.
+- The final compiled 1.9.6 app passed **19 probe checks**. All **38 packaged files**
+  matched the ZIP; the embedded installer payload matched that ZIP by SHA-256.
+  Isolated clean installation and edited-trigger upgrade passed. An injected
+  post-retirement failure restored all **56 fixture file hashes**.
+- The actual 1.9.5 installer was used to create another isolated profile. Its
+  first attempted upgrade to 1.9.6 deliberately failed after retirement and
+  restored **58 old-release file hashes**. The successful upgrade then preserved
+  all **13 configuration file hashes**, including custom, disabled and deleted
+  triggers, the absence of a BB marker, and conflicting legacy/unified rules.
+  The packaged converter produced the unified replacement and retired obsolete files.
+- All **17 engine benchmarks**, with 301 warm samples each, passed the 150 ms
+  p95 budget; the highest measured p95 was **9.348 ms**. Engine initialization was
+  measured separately. These are engine timings, not full editor response times.
+  Source/data integrity, documentation and 94 C# formatting checks also passed.
+- Existing working documents, installed program files and live configuration
+  were not modified by automation. Tests used disposable content beneath ignored
+  `out/` directories. The pre-review installer was archived as superseded.
+
+The installer is unsigned. The native stall tests are bounded and resume the
+owned Word server independently. A permanently hung COM server, Windows sign-in,
+sleep/wake and every possible editor are outside the completed checks. Results
+do not establish universal compatibility or guaranteed latency. Detailed review
+history remains in [Development verification](DEVELOPMENT_VERIFICATION.md).
+
 ## KeyJaya 1.9.5 — 23 October 2026
 
 - All 44 isolated suites passed: **26,935,872 assertions; zero failures**. The

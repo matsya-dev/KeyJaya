@@ -326,6 +326,13 @@ Turn the option off to convert without adding automatic italics.
 
 ## Tray settings and shortcut customization
 
+Advanced preferences are grouped in `config/customizations.ini`: word aliases,
+preferred or protected spellings, script words/phrases, italics exceptions, and
+ordered replacements. Its commented examples explain each section. Save changes
+and choose **Reload configuration**. Existing legacy TSV customizations still
+work without modification; entries in the new file override legacy entries of
+the same kind. Word preferences take priority over general aliases.
+
 Open the menu from the white **की** icon:
 
 ![KeyJaya tray menu with default settings](images/tray-menu.png)

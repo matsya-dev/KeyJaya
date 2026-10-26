@@ -42,13 +42,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Documentation check failed.' }
           python tools/fetch_hindi_sources.py --check
           if ($LASTEXITCODE -ne 0) { throw 'Dictionary source check failed.' }
+      - name: Check developer-tool boundaries
+        run: |
+          python -m unittest discover -s tests/python -v
+          if ($LASTEXITCODE -ne 0) { throw 'Developer-tool checks failed.' }
       - name: Build verification installer
         run: ./build.ps1
       - name: Check compiled application
         run: ./tools/verify_app.ps1
       - name: Run all isolated regression suites
         run: ./test.ps1 -Full
-      - name: Verify package, clean install, and upgrade
+      - name: Check setup retirement rollback
+        run: ./tools/test_setup_transaction.ps1
+      - name: Check conversion-engine speed budget
+        run: ./tools/benchmark.ps1 -Iterations 101 -Check
+      - name: Verify package, clean install, upgrade, and rollback
         run: |
           python tools/verify_build.py
           if ($LASTEXITCODE -ne 0) { throw 'Installer verification failed.' }
@@ -63,7 +71,7 @@ jobs:
           }
           if (Test-Path -LiteralPath 'out/verification/build-results.json') {
             $package = Get-Content -LiteralPath 'out/verification/build-results.json' -Raw | ConvertFrom-Json
-            $summary += ('Package files verified: ' + $package.package_files + '; fresh install and edited-trigger upgrade passed.')
+            $summary += ('Package files verified: ' + $package.package_files + '; fresh install, edited-trigger upgrade and complete rollback passed.')
           }
           $summary += @('', 'GUI editors, physical typing, sign-in, and sleep/wake are outside these checks. No installed user profile is used.')
           [IO.File]::WriteAllText($env:GITHUB_STEP_SUMMARY, ($summary -join "`n"), (New-Object Text.UTF8Encoding($false)))
@@ -75,6 +83,8 @@ jobs:
           path: |
             out/tests/*.txt
             out/tests/results.json
+            out/benchmarks/**/results.json
             out/verification/build-results.json
+            out/setup-transaction/**/results.txt
           if-no-files-found: ignore
           retention-days: 7

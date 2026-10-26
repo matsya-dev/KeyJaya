@@ -1,4 +1,5 @@
 # Font name<TAB>unicode, balaram, or ignore. Save then Reload configuration.
+# Fresh-install template. Rows contain literal TABs, not spaces or escape codes.
 # Exact names, case insensitive; extra whitespace and a leading @ are ignored.
 # Unknown/unavailable fonts default to Unicode. Incompatible legacy script fonts are ignored.
 Balaram	balaram

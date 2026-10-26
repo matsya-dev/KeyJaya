@@ -1,60 +1,340 @@
-using System.Web.Script.Serialization;using System.Text.RegularExpressions;using System;using System.IO;using System.Text;using System.Collections.Generic;using System.Linq;
-namespace KeyJaya {public static class ToggleTests {
- static int passed,failed;static void Check(bool ok,string name){if(ok)passed++;else{failed++;if(failed<20)Console.WriteLine("FAIL "+name);}}static void Equal(string a,string b,string name){Check(a==b,name+" expected="+a+" actual="+b);}
- public static int Main(string[] args){string scratch=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0])),"toggle-test-artifacts",Guid.NewGuid().ToString("N"));string root=Path.Combine(scratch,"app");Directory.CreateDirectory(Path.Combine(root,"data"));Directory.CreateDirectory(Configuration.Folder(root));foreach(string file in Directory.GetFiles(Path.Combine(args[0],"data")))File.Copy(file,Path.Combine(root,"data",Path.GetFileName(file)));Configuration.Write(Configuration.Personal(root),new Dictionary<string,string>());string settings=Path.Combine(Configuration.Folder(root),"settings.ini");File.WriteAllText(settings,"custom_setting=keep\n",new UTF8Encoding(false));
-  var ambiguous=new HashSet<string>(new[]{"well","were","ill","hell","shell","its","wed","shed"});var known=new HashSet<string>(File.ReadAllLines(args[1]),StringComparer.Ordinal);var rows=new Dictionary<string,string>();byte[] data=File.ReadAllBytes(Path.Combine(root,"data","english-corrections.dat"));using(BinaryReader reader=new BinaryReader(File.OpenRead(Path.Combine(root,"data","english-corrections.idx"))))while(reader.BaseStream.Position<reader.BaseStream.Length){reader.ReadUInt64();long offset=reader.ReadInt64();int length=reader.ReadInt32();string record=Encoding.UTF8.GetString(data,(int)offset,length);int split=record.IndexOf('\0');rows[record.Substring(0,split)]=record.Substring(split+1);}
-  string remapFile=Path.Combine(scratch,"remap.yml"),backupFile=Path.Combine(scratch,"before.yml");
-  string source="matches:\n  - trigger: 'SP:'\n    replace: 'My edited Srila Prabhupada'\n  - trigger: ':hello'\n    replace: |-\n      Hello\n      unchanged\n";
-  File.WriteAllText(remapFile,source,new UTF8Encoding(false));Check(Configuration.RemapPlainFile(remapFile,backupFile),"migration changes colon suffix");Equal(source,File.ReadAllText(backupFile),"exact original backup");Equal("My edited Srila Prabhupada",Configuration.Read(remapFile)["SP?"],"edited replacement preserved");Equal("Hello\nunchanged",Configuration.Read(remapFile)[":hello"],"multiline and prefix trigger preserved");Check(!Configuration.RemapPlainFile(remapFile,backupFile),"migration idempotent");
-  File.WriteAllText(remapFile,"matches:\n  - trigger: 'SP:'\n    replace: 'first'\n  - trigger: 'SP?'\n    replace: 'second'\n",new UTF8Encoding(false));string collision=File.ReadAllText(remapFile);try{Configuration.RemapPlainFile(remapFile,backupFile);Check(false,"collision rejected");}catch(InvalidDataException){Check(true,"collision rejected");}Equal(collision,File.ReadAllText(remapFile),"collision leaves file unchanged");
-  Configuration.Write(Configuration.Personal(root),new Dictionary<string,string>{{"SP:","Srila Prabhupada"}});
-  using(Core remapped=new Core(root)){Equal("Srila Prabhupada",remapped.Trigger("SP?"),"old YAML activates new short ending");Equal(null,remapped.Trigger("SP:"),"old short ending retired");Equal("krsna",remapped.Trigger("kṛṣṇa?"),"plain word trigger");Equal(null,remapped.Trigger("kṛṣṇa:"),"old word ending retired");Equal(null,remapped.Trigger("age?"),"English still protected");InputState typed=new InputState();string result=null;foreach(char c in "Earlier untouched SP?")result=typed.Type(c,remapped);Equal("SP?",result,"new suffix isolates current token");Equal("one hundred twenty-three",remapped.ConvertHighlighted("123","unicode"),"new number ending");Equal(null,remapped.Trigger("123#"),"old number ending retired");Equal("one hundred twenty-third",remapped.ConvertHighlighted("123rd","unicode"),"new ordinal ending");Equal(remapped.Trigger("BG9.1:"),null,"old scripture ending retired");Check(remapped.Trigger("BG9.1?")!=null,"new plain scripture ending");}
-  Configuration.Write(Configuration.Personal(root),new Dictionary<string,string>());
-  using(Core c=new Core(root)){Check(c.AutomaticCorrections.Spelling&&c.AutomaticCorrections.Contractions,"defaults enabled");for(int bits=0;bits<4;bits++){bool spell=(bits&1)!=0,contract=(bits&2)!=0;c.AutomaticCorrections.Set(spell,contract);Check(c.AutomaticCorrections.Spelling==spell&&c.AutomaticCorrections.Contractions==contract,"independent flags");using(Core restarted=new Core(root)){Check(restarted.AutomaticCorrections.Spelling==spell&&restarted.AutomaticCorrections.Contractions==contract,"restart persistence");}
-   foreach(var row in rows){bool enabled=!ambiguous.Contains(row.Key)&&(known.Contains(row.Key)?contract:spell);foreach(string punctuation in new[]{"",",","!"}){string input=row.Key+punctuation+" ",expected=enabled&&row.Value!=row.Key?row.Value+punctuation+" ":null;Equal(expected,c.CorrectCompletedWord(input),"switch matrix "+bits+" "+row.Key);Check(expected==null||c.MayCorrectCompletedWord(input),"enabled worker filter "+row.Key);if(!enabled)Check(!c.MayCorrectCompletedWord(input),"disabled worker filter "+row.Key);}}
-   foreach(string input in new[]{"doesnt ","doesn't ","DOESNT ","(“doesnt”) ","\"doesnt,\" "})Check((c.CorrectCompletedWord(input)!=null)==contract,"contraction wrapping/case "+bits);Equal(spell?"the ":null,c.CorrectCompletedWord("teh "),"spelling toggle");Equal("Haridāsa Ṭhākura",c.Trigger("HT>"),"triggers independent of toggles");Equal("rāja",c.Convert("rāja","unicode"),"clipboard independent of toggles");Check(File.ReadAllText(settings).Contains("custom_setting=keep"),"unrelated settings preserved");}
-   c.AutomaticCorrections.Set(false,true);using(Core reloaded=Core.Reload(c,root))Check(!reloaded.AutomaticCorrections.Spelling&&reloaded.AutomaticCorrections.Contractions,"reload preserves settings");
-  }
-  Configuration.Write(Configuration.Personal(root),new Dictionary<string,string>{{":unsafe","</script><script>alert('x')</script> __WORDS__ & rājä"},{"HT>","Personal override"}});
-  using(Core c=new Core(root)){
-   var shortEntries=c.ActiveShortTriggers();var triggerRows=CheatSheet.Triggers(shortEntries);var shortcuts=CheatSheet.Shortcuts();
-   Check(shortEntries.All(row=>triggerRows.Count(x=>x.Input==row.Key&&x.Action==row.Value)==1),"every active short trigger appears exactly once");
-   Check(!triggerRows.Any(x=>x.Input=="123#"||x.Input=="123rd#"),"retired numeric hash triggers removed from help");
-   Check(shortcuts.Any(x=>x.Input=="24 + Left Ctrl")&&shortcuts.Any(x=>x.Input=="24th + Left Ctrl"),"Ctrl-only numeric conversion appears in shortcuts");
-   Check(triggerRows.Any(x=>x.Input=="HT>"&&x.Action=="Personal override"),"cheat sheet reflects personal override");
-   Check(triggerRows.Any(x=>x.Input==":unsafe"&&x.Action.Contains("</script>")),"replacement is plain reference text");
-   Check(!triggerRows.Any(x=>x.Input==":espanso"),"demo trigger absent");
-   foreach(string key in new[]{"Ctrl+.","Ctrl+,","Ctrl+/","Ctrl+\\","Ctrl+[","Ctrl+]","Backtick (`)","Left Ctrl tap","Backspace"})Check(shortcuts.Any(x=>x.Input==key),"shortcut reference "+key);
-   Check(CheatSheet.Filter(triggerRows,"ht>").Any(x=>x.Input=="HT>"),"case-insensitive trigger lookup");
-   Check(CheatSheet.Filter(triggerRows,"not-a-trigger-abc987XYZ").Length==0,"empty trigger lookup");
-   Check(!shortcuts.Any(x=>x.Input=="Right Ctrl tap"),"Right Ctrl removed from reference");
-   Check(shortcuts.Single(x=>x.Input=="Left Ctrl tap").Action.Contains("word"),"Left Ctrl reference describes whole word");
-   Check(shortcuts.Single(x=>x.Input=="Backtick (`)").Action.Contains("font"),"backtick reference describes font-aware letter");
-   foreach(bool paused in new[]{false,true})foreach(bool spelling in new[]{false,true})foreach(bool contractions in new[]{false,true}){
-    var menu=TrayMenu.Items(paused,spelling,contractions);Check(menu[0].Id==21&&menu[0].Label=="Cheat sheet","reference first in menu");Check(menu.Single(x=>x.Id==31).Flags==8&&menu.Single(x=>x.Id==32).Flags==0,"default tray output is ITRANS");
-    Check(menu.Where(x=>x.Label!=null).Select(x=>x.Id).SequenceEqual(new uint[]{21,19,20,30,22,23,24,31,32,25,26,34,35,5,17,33,1,7,8}),"exact compact menu actions");
-    Check(!menu.Any(x=>x.Label!=null&&((x.Label.Contains("Ctrl+")&&x.Id!=31&&x.Id!=32)||x.Label.Contains("log folder")||x.Label.Contains("Open KeyJaya folder"))),"removed menu entries absent");var tertiary=menu.Where(x=>x.Id==31||x.Id==32).ToArray();Check(tertiary.Count(x=>(x.Flags&8)!=0)==1,"one tertiary shortcut choice");
-    Check(menu.Single(x=>x.Id==19).Flags==(spelling?8u:0u)&&menu.Single(x=>x.Id==20).Flags==(contractions?8u:0u),"independent checked options");
-    Check(menu.Single(x=>x.Id==1).Label==(paused?"Resume KeyJaya":"Pause KeyJaya"),"pause action state");
-   }
-  }
-  var encoding=new EncodingSettings(settings);Equal("auto",encoding.Mode,"encoding defaults to Auto");var fonts=new FontEncoding(null);
-  foreach(string mode in new[]{"auto","unicode","balaram"}){
-   encoding.Set(mode);Equal(mode,new EncodingSettings(settings).Mode,"encoding persists after restart");
-   Check(File.ReadAllText(settings).Contains("custom_setting=keep"),"encoding preserves unrelated settings");
-   Check(File.ReadAllText(settings).Contains("auto_contractions=true"),"encoding preserves correction settings");
-   foreach(string font in new[]{null,"Arial","ScaGoudy","Inbenr"})foreach(bool mixed in new[]{false,true})Equal(mode=="auto"?fonts.Resolve(font,mixed):mode,encoding.Resolve(fonts,font,mixed),"override resolution "+mode);
-   var menu=TrayMenu.Items(false,true,true,mode);var selected=menu.Where(x=>x.Id>=22&&x.Id<=24&&(x.Flags&8)!=0).ToArray();Check(selected.Length==1,"exactly one encoding choice checked");Check(selected[0].Id==(mode=="auto"?22u:mode=="unicode"?23u:24u),"correct encoding choice checked");
-   var correction=new CorrectionSettings(settings);correction.Set(true,false);Equal(mode,new EncodingSettings(settings).Mode,"correction save preserves encoding");correction.Set(false,true);
-  }
-  string encodingBefore=File.ReadAllText(settings);try{encoding.Set("bogus");Check(false,"invalid encoding accepted");}catch(ArgumentException){Check(encoding.Mode=="balaram"&&File.ReadAllText(settings)==encodingBefore,"invalid encoding leaves setting unchanged");}
-  string blockedEncoding=Path.Combine(scratch,"encoding-blocked");File.WriteAllText(blockedEncoding,"file");var saveFailure=new EncodingSettings(Path.Combine(blockedEncoding,"settings.ini"));try{saveFailure.Set("balaram");Check(false,"failed encoding save accepted");}catch(IOException){Equal("auto",saveFailure.Mode,"failed save retains active encoding");}
-  string invalidEncoding=Path.Combine(scratch,"invalid-encoding.ini");File.WriteAllText(invalidEncoding,"encoding_override=bogus\n");try{new EncodingSettings(invalidEncoding);Check(false,"invalid saved encoding accepted");}catch(InvalidDataException){passed++;}
-  File.WriteAllText(settings,"autocorrect_spelling=maybe\n");try{new CorrectionSettings(settings);Check(false,"invalid setting accepted");}catch(InvalidDataException){passed++;}
-  string blocked=Path.Combine(scratch,"blocked");File.WriteAllText(blocked,"file");var failure=new CorrectionSettings(Path.Combine(blocked,"settings.ini"));try{failure.Set(false,false);Check(false,"failed save accepted");}catch(IOException){Check(failure.Spelling&&failure.Contractions,"failed save retains active flags");}
-  Console.WriteLine("Correction entries tested in all four settings combinations: "+rows.Count);for(int bits=0;bits<4;bits++){var scriptMenu=TrayMenu.Items(false,true,true,"auto",(bits&1)!=0,(bits&2)!=0);Check(scriptMenu.Single(x=>x.Id==25).Flags==((bits&1)!=0?8u:0u),"precise script tray check");Check(scriptMenu.Single(x=>x.Id==26).Flags==((bits&2)!=0?8u:0u),"verse retention tray check");Check(scriptMenu.Count(x=>x.Id==35&&x.Label=="Edit triggers…")==1,"trigger editor available once in tray");}
-  Console.WriteLine("PASS: "+passed+" FAIL: "+failed);return failed==0?0:1;
- }
-}}
+// Noninteractive regressions: independent feature toggles, persistence, references, and tray states.
+// Run: .\test.ps1 -Suite ToggleTests. Fixtures live under out/; no resident hooks are started.
+using System.Web.Script.Serialization;
+using System.Text.RegularExpressions;
+using System;
+using System.IO;
+using System.Text;
+using System.Collections.Generic;
+using System.Linq;
 
+namespace KeyJaya
+{
+    public static class ToggleTests
+    {
+        static int passed, failed;
+        static void Check(bool ok, string name)
+        {
+            if (ok)
+                passed++;
+            else
+            {
+                failed++;
+                if (failed < 20)
+                    Console.WriteLine("FAIL " + name);
+            }
+        }
 
+        static void Equal(string a, string b, string name)
+        {
+            Check(a == b, name + " expected=" + a + " actual=" + b);
+        }
+
+        public static int Main(string[] args)
+        {
+            string scratch = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0])), "toggle-test-artifacts", Guid.NewGuid().ToString("N"));
+            string root = Path.Combine(scratch, "app");
+            Directory.CreateDirectory(Path.Combine(root, "data"));
+            Directory.CreateDirectory(Configuration.Folder(root));
+            foreach (string file in Directory.GetFiles(Path.Combine(args[0], "data")))
+                File.Copy(file, Path.Combine(root, "data", Path.GetFileName(file)));
+            Directory.CreateDirectory(Path.Combine(root, "assets"));
+            File.Copy(Configuration.Factory(args[0]), Configuration.Factory(root));
+            Configuration.Write(Configuration.Personal(root), new Dictionary<string, string>());
+            string settings = Path.Combine(Configuration.Folder(root), "settings.ini");
+            File.WriteAllText(settings, "custom_setting=keep\n", new UTF8Encoding(false));
+            var ambiguous = new HashSet<string>(new[] { "well", "were", "ill", "hell", "shell", "its", "wed", "shed" });
+            var known = new HashSet<string>(File.ReadAllLines(args[1]), StringComparer.Ordinal);
+            var rows = new Dictionary<string, string>();
+            byte[] data = File.ReadAllBytes(Path.Combine(root, "data", "english-corrections.dat"));
+            using (BinaryReader reader = new BinaryReader(File.OpenRead(Path.Combine(root, "data", "english-corrections.idx"))))
+                while (reader.BaseStream.Position < reader.BaseStream.Length)
+                {
+                    reader.ReadUInt64();
+                    long offset = reader.ReadInt64();
+                    int length = reader.ReadInt32();
+                    string record = Encoding.UTF8.GetString(data, (int)offset, length);
+                    int split = record.IndexOf('\0');
+                    rows[record.Substring(0, split)] = record.Substring(split + 1);
+                }
+
+            string remapFile = Path.Combine(scratch, "remap.yml"), backupFile = Path.Combine(scratch, "before.yml");
+            string source = "matches:\n  - trigger: 'SP:'\n    replace: 'My edited Srila Prabhupada'\n  - trigger: ':hello'\n    replace: |-\n      Hello\n      unchanged\n";
+            File.WriteAllText(remapFile, source, new UTF8Encoding(false));
+            Check(Configuration.RemapPlainFile(remapFile, backupFile), "migration changes colon suffix");
+            Equal(source, File.ReadAllText(backupFile), "exact original backup");
+            Equal("My edited Srila Prabhupada", Configuration.Read(remapFile)["SP?"], "edited replacement preserved");
+            Equal("Hello\nunchanged", Configuration.Read(remapFile)[":hello"], "multiline and prefix trigger preserved");
+            Check(!Configuration.RemapPlainFile(remapFile, backupFile), "migration idempotent");
+            File.WriteAllText(remapFile, "matches:\n  - trigger: 'SP:'\n    replace: 'first'\n  - trigger: 'SP?'\n    replace: 'second'\n", new UTF8Encoding(false));
+            string collision = File.ReadAllText(remapFile);
+            try
+            {
+                Configuration.RemapPlainFile(remapFile, backupFile);
+                Check(false, "collision rejected");
+            }
+            catch (InvalidDataException)
+            {
+                Check(true, "collision rejected");
+            }
+
+            Equal(collision, File.ReadAllText(remapFile), "collision leaves file unchanged");
+            Configuration.Write(Configuration.Personal(root), new Dictionary<string, string> { { "SP:", "Srila Prabhupada" } });
+            using (Core remapped = new Core(root))
+            {
+                Equal("Srila Prabhupada", remapped.Trigger("SP?"), "old YAML activates new short ending");
+                Equal(null, remapped.Trigger("SP:"), "old short ending retired");
+                Equal("krsna", remapped.Trigger("kṛṣṇa?"), "plain word trigger");
+                Equal(null, remapped.Trigger("kṛṣṇa:"), "old word ending retired");
+                Equal(null, remapped.Trigger("age?"), "English still protected");
+                InputState typed = new InputState();
+                string result = null;
+                foreach (char c in "Earlier untouched SP?")
+                    result = typed.Type(c, remapped);
+                Equal("SP?", result, "new suffix isolates current token");
+                Equal("one hundred twenty-three", remapped.ConvertHighlighted("123", "unicode"), "new number ending");
+                Equal(null, remapped.Trigger("123#"), "old number ending retired");
+                Equal("one hundred twenty-third", remapped.ConvertHighlighted("123rd", "unicode"), "new ordinal ending");
+                Equal(remapped.Trigger("BG9.1:"), null, "old scripture ending retired");
+                Check(remapped.Trigger("BG9.1?") != null, "new plain scripture ending");
+            }
+
+            Configuration.Write(Configuration.Personal(root), new Dictionary<string, string>());
+            using (Core c = new Core(root))
+            {
+                Check(c.AutomaticCorrections.Spelling && c.AutomaticCorrections.Contractions, "defaults enabled");
+                for (int bits = 0; bits < 4; bits++)
+                {
+                    bool spell = (bits & 1) != 0, contract = (bits & 2) != 0;
+                    c.AutomaticCorrections.Set(spell, contract);
+                    Check(c.AutomaticCorrections.Spelling == spell && c.AutomaticCorrections.Contractions == contract, "independent flags");
+                    using (Core restarted = new Core(root))
+                    {
+                        Check(restarted.AutomaticCorrections.Spelling == spell && restarted.AutomaticCorrections.Contractions == contract, "restart persistence");
+                    }
+
+                    foreach (var row in rows)
+                    {
+                        bool enabled = !ambiguous.Contains(row.Key) && (known.Contains(row.Key) ? contract : spell);
+                        foreach (string punctuation in new[]
+                        {
+                            "",
+                            ",",
+                            "!"
+                        }
+
+                        )
+                        {
+                            string input = row.Key + punctuation + " ", expected = enabled && row.Value != row.Key ? row.Value + punctuation + " " : null;
+                            Equal(expected, c.CorrectCompletedWord(input), "switch matrix " + bits + " " + row.Key);
+                            Check(expected == null || c.MayCorrectCompletedWord(input), "enabled worker filter " + row.Key);
+                            if (!enabled)
+                                Check(!c.MayCorrectCompletedWord(input), "disabled worker filter " + row.Key);
+                        }
+                    }
+
+                    foreach (string input in new[]
+                    {
+                        "doesnt ",
+                        "doesn't ",
+                        "DOESNT ",
+                        "(“doesnt”) ",
+                        "\"doesnt,\" "
+                    }
+
+                    )
+                        Check((c.CorrectCompletedWord(input) != null) == contract, "contraction wrapping/case " + bits);
+                    Equal(spell ? "the " : null, c.CorrectCompletedWord("teh "), "spelling toggle");
+                    Equal("Haridāsa Ṭhākura", c.Trigger("HT>"), "triggers independent of toggles");
+                    Equal("rāja", c.Convert("rāja", "unicode"), "clipboard independent of toggles");
+                    Check(File.ReadAllText(settings).Contains("custom_setting=keep"), "unrelated settings preserved");
+                }
+
+                c.AutomaticCorrections.Set(false, true);
+                using (Core reloaded = Core.Reload(c, root))
+                    Check(!reloaded.AutomaticCorrections.Spelling && reloaded.AutomaticCorrections.Contractions, "reload preserves settings");
+            }
+
+            Configuration.Write(Configuration.Personal(root), new Dictionary<string, string> { { ":unsafe", "</script><script>alert('x')</script> __WORDS__ & rājä" }, { "HT>", "Personal override" } });
+            using (Core c = new Core(root))
+            {
+                var shortEntries = c.ActiveShortTriggers();
+                var triggerRows = CheatSheet.Triggers(shortEntries);
+                var shortcuts = CheatSheet.Shortcuts();
+                Check(shortEntries.All(row => triggerRows.Count(x => x.Input == row.Key && x.Action == row.Value) == 1), "every active short trigger appears exactly once");
+                Check(!triggerRows.Any(x => x.Input == "123#" || x.Input == "123rd#"), "retired numeric hash triggers removed from help");
+                Check(shortcuts.Any(x => x.Input == "24 + Left Ctrl") && shortcuts.Any(x => x.Input == "24th + Left Ctrl"), "Ctrl-only numeric conversion appears in shortcuts");
+                Check(triggerRows.Any(x => x.Input == "HT>" && x.Action == "Personal override"), "cheat sheet reflects personal override");
+                Check(triggerRows.Any(x => x.Input == ":unsafe" && x.Action.Contains("</script>")), "replacement is plain reference text");
+                Check(!triggerRows.Any(x => x.Input == ":espanso"), "demo trigger absent");
+                foreach (string key in new[]
+                {
+                    "Ctrl+.",
+                    "Ctrl+,",
+                    "Ctrl+/",
+                    "Ctrl+\\",
+                    "Ctrl+[",
+                    "Ctrl+]",
+                    "Backtick (`)",
+                    "Left Ctrl tap",
+                    "Backspace"
+                }
+
+                )
+                    Check(shortcuts.Any(x => x.Input == key), "shortcut reference " + key);
+                Check(CheatSheet.Filter(triggerRows, "ht>").Any(x => x.Input == "HT>"), "case-insensitive trigger lookup");
+                Check(CheatSheet.Filter(triggerRows, "not-a-trigger-abc987XYZ").Length == 0, "empty trigger lookup");
+                Check(!shortcuts.Any(x => x.Input == "Right Ctrl tap"), "Right Ctrl removed from reference");
+                Check(shortcuts.Single(x => x.Input == "Left Ctrl tap").Action.Contains("word"), "Left Ctrl reference describes whole word");
+                Check(shortcuts.Single(x => x.Input == "Backtick (`)").Action.Contains("font"), "backtick reference describes font-aware letter");
+                foreach (bool paused in new[]
+                {
+                    false,
+                    true
+                }
+
+                )
+                    foreach (bool spelling in new[]
+                    {
+                        false,
+                        true
+                    }
+
+                    )
+                        foreach (bool contractions in new[]
+                        {
+                            false,
+                            true
+                        }
+
+                        )
+                        {
+                            var menu = TrayMenu.Items(paused, spelling, contractions);
+                            Check(menu[0].Id == 21 && menu[0].Label == "Cheat sheet", "reference first in menu");
+                            Check(menu.Single(x => x.Id == 31).Flags == 8 && menu.Single(x => x.Id == 32).Flags == 0, "default tray output is ITRANS");
+                            Check(menu.Where(x => x.Label != null).Select(x => x.Id).SequenceEqual(new uint[] { 21, 19, 20, 30, 22, 23, 24, 31, 32, 25, 26, 34, 35, 5, 17, 33, 1, 7, 8 }), "exact compact menu actions");
+                            Check(!menu.Any(x => x.Label != null && ((x.Label.Contains("Ctrl+") && x.Id != 31 && x.Id != 32) || x.Label.Contains("log folder") || x.Label.Contains("Open KeyJaya folder"))), "removed menu entries absent");
+                            var tertiary = menu.Where(x => x.Id == 31 || x.Id == 32).ToArray();
+                            Check(tertiary.Count(x => (x.Flags & 8) != 0) == 1, "one tertiary shortcut choice");
+                            Check(menu.Single(x => x.Id == 19).Flags == (spelling ? 8u : 0u) && menu.Single(x => x.Id == 20).Flags == (contractions ? 8u : 0u), "independent checked options");
+                            Check(menu.Single(x => x.Id == 1).Label == (paused ? "Resume KeyJaya" : "Pause KeyJaya"), "pause action state");
+                        }
+            }
+
+            var encoding = new EncodingSettings(settings);
+            Equal("auto", encoding.Mode, "encoding defaults to Auto");
+            var fonts = new FontEncoding(null);
+            foreach (string mode in new[]
+            {
+                "auto",
+                "unicode",
+                "balaram"
+            }
+
+            )
+            {
+                encoding.Set(mode);
+                Equal(mode, new EncodingSettings(settings).Mode, "encoding persists after restart");
+                Check(File.ReadAllText(settings).Contains("custom_setting=keep"), "encoding preserves unrelated settings");
+                Check(File.ReadAllText(settings).Contains("auto_contractions=true"), "encoding preserves correction settings");
+                foreach (string font in new[]
+                {
+                    null,
+                    "Arial",
+                    "ScaGoudy",
+                    "Inbenr"
+                }
+
+                )
+                    foreach (bool mixed in new[]
+                    {
+                        false,
+                        true
+                    }
+
+                    )
+                        Equal(mode == "auto" ? fonts.Resolve(font, mixed) : mode, encoding.Resolve(fonts, font, mixed), "override resolution " + mode);
+                var menu = TrayMenu.Items(false, true, true, mode);
+                var selected = menu.Where(x => x.Id >= 22 && x.Id <= 24 && (x.Flags & 8) != 0).ToArray();
+                Check(selected.Length == 1, "exactly one encoding choice checked");
+                Check(selected[0].Id == (mode == "auto" ? 22u : mode == "unicode" ? 23u : 24u), "correct encoding choice checked");
+                var correction = new CorrectionSettings(settings);
+                correction.Set(true, false);
+                Equal(mode, new EncodingSettings(settings).Mode, "correction save preserves encoding");
+                correction.Set(false, true);
+            }
+
+            string encodingBefore = File.ReadAllText(settings);
+            try
+            {
+                encoding.Set("bogus");
+                Check(false, "invalid encoding accepted");
+            }
+            catch (ArgumentException)
+            {
+                Check(encoding.Mode == "balaram" && File.ReadAllText(settings) == encodingBefore, "invalid encoding leaves setting unchanged");
+            }
+
+            string blockedEncoding = Path.Combine(scratch, "encoding-blocked");
+            File.WriteAllText(blockedEncoding, "file");
+            var saveFailure = new EncodingSettings(Path.Combine(blockedEncoding, "settings.ini"));
+            try
+            {
+                saveFailure.Set("balaram");
+                Check(false, "failed encoding save accepted");
+            }
+            catch (IOException)
+            {
+                Equal("auto", saveFailure.Mode, "failed save retains active encoding");
+            }
+
+            string invalidEncoding = Path.Combine(scratch, "invalid-encoding.ini");
+            File.WriteAllText(invalidEncoding, "encoding_override=bogus\n");
+            try
+            {
+                new EncodingSettings(invalidEncoding);
+                Check(false, "invalid saved encoding accepted");
+            }
+            catch (InvalidDataException)
+            {
+                passed++;
+            }
+
+            File.WriteAllText(settings, "autocorrect_spelling=maybe\n");
+            try
+            {
+                new CorrectionSettings(settings);
+                Check(false, "invalid setting accepted");
+            }
+            catch (InvalidDataException)
+            {
+                passed++;
+            }
+
+            string blocked = Path.Combine(scratch, "blocked");
+            File.WriteAllText(blocked, "file");
+            var failure = new CorrectionSettings(Path.Combine(blocked, "settings.ini"));
+            try
+            {
+                failure.Set(false, false);
+                Check(false, "failed save accepted");
+            }
+            catch (IOException)
+            {
+                Check(failure.Spelling && failure.Contractions, "failed save retains active flags");
+            }
+
+            Console.WriteLine("Correction entries tested in all four settings combinations: " + rows.Count);
+            for (int bits = 0; bits < 4; bits++)
+            {
+                var scriptMenu = TrayMenu.Items(false, true, true, "auto", (bits & 1) != 0, (bits & 2) != 0);
+                Check(scriptMenu.Single(x => x.Id == 25).Flags == ((bits & 1) != 0 ? 8u : 0u), "precise script tray check");
+                Check(scriptMenu.Single(x => x.Id == 26).Flags == ((bits & 2) != 0 ? 8u : 0u), "verse retention tray check");
+                Check(scriptMenu.Count(x => x.Id == 35 && x.Label == "Edit triggers…") == 1, "trigger editor available once in tray");
+            }
+
+            Console.WriteLine("PASS: " + passed + " FAIL: " + failed);
+            return failed == 0 ? 0 : 1;
+        }
+    }
+}

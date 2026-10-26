@@ -1,6 +1,9 @@
-# EDIT THIS FILE to add, edit, or delete KeyJaya short triggers.
-# Save, then choose Reload configuration in the tray menu.
-# All active short triggers are listed here; deleting an entry disables it.
+# Factory source for fresh installs, selected-trigger restoration, and tests.
+# Installed config/short-triggers.yml is the user's editable copy; loading this
+# factory file must never restore entries deleted from that installed copy.
+# Users normally change triggers through Edit triggers in the tray menu.
+# For manual edits to the installed copy: save, then Reload configuration.
+# Deleting an entry from the installed copy disables that entry.
 # Example:
 #   - trigger: ':hello'
 #     replace: 'Hello!'

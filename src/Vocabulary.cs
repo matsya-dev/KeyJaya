@@ -1,7 +1,37 @@
-using System;using System.Collections.Generic;
-namespace KeyJaya {
-public static class Vocabulary {
- public static readonly Dictionary<string,string> Terms=Create();
- static Dictionary<string,string> Create(){var terms=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);foreach(string word in "varṇa śiva mathurā gosvāmīpāda paramātmā devī mahārāṇī tamāla satsvarūpa nitāi gaura sārvabhauma bhaṭṭācārya dāsa dāsī mahārāja śrīla śikhā varuṇa sārārtha darśinī kṛṣṇa śruti puṣṭi mārga tulasī āsana yaśodā pūrṇimā vaiṣṇava ācārya śāstra śrīmad bhāgavata bhagavān bhagavad saṁhitā siddhānta tattva bhakti bhakta nāma saṅkīrtana kīrtana śravaṇa smaraṇa vandana arcana sevā līlā prema mādhurya aiśvarya vātsalya sakhya dāsya śānta śakti svarūpa śuddha śraddhā niṣṭhā ruci āsakti rāga rāgānugā rāgātmikā vaidhī sādhana sādhaka sādhu sādhus kṛpā dīkṣā śikṣā guru paramparā sampradāya pūjā pūjārī prasāda mahāprasāda śālagrāma śāligrāma ārati parikramā praṇāma daṇḍavat maṅgala pūrva uttara madhya ādi antya gopī gopāla govinda gopīnātha gopījana rādhā rādhikā rādhārāṇī mādhava mādhavī mādhavendra mālatī mādhurī lalitā viśākhā mañjarī vṛndā vṛndāvana navadvīpa māyāpura jagannātha nityānanda advaita gadādhara śrīvāsa caitanya mahāprabhu prabhupāda haridāsa narottama śyāmānanda śrīnivāsa bhaktivinoda bhaktisiddhānta bhaktivedānta viśvanātha jīva rūpa sanātana raghunātha rāmacandra baladeva balarāma vasudeva vāsudeva devakī nandā nanda arjuna bhīma yudhiṣṭhira kuntī draupadī kaunteya pārtha hanumān rāma sītā lakṣmaṇa bharata śiva durgā gaṇeśa gaṇeśa sarasvatī lakṣmī viṣṇu nārāyaṇa brahmā brahmaṇa brāhmaṇa kṣatriya śūdra gṛhastha brahmacārī sannyāsī gosvāmī svāmī yogī ṛṣi muni ātmā jīva avatāra paṇḍita śruti smṛti upaniṣad purāṇa īśopaniṣad vedānta saṁskṛta saṁskāra śaraṇāgati aparādha ānanda anartha adhikāra saṅga śaraṇa sevaka vaiṣṇavī kṛṣṇadāsa gaurāṅga gauracandra rādhādāsa kṛṣṇaprema".Split(' '))terms[EncodingMap.Ascii(word).ToLowerInvariant()]=word;terms["pandit"]="paṇḍita";terms["pundit"]="paṇḍita";terms["brhad"]="bṛhad";terms["brhat"]="bṛhat";terms["raj"]="rāja";terms["niti"]="nīti";terms["saiva"]="śaiva";terms["brahmin"]="brāhmaṇa";terms["brahmins"]="brāhmaṇas";terms["shiva"]="śiva";terms["krishna"]="kṛṣṇa";terms["shri"]="śrī";terms["shree"]="śrī";terms["shreela"]="śrīla";terms["bhakthi"]="bhakti";terms["shikha"]="śikhā";terms["darshini"]="darśinī";terms["saarartha"]="sārārtha";return terms;}
-}
+// KeyJaya: Small, curated high-confidence spellings and aliases supplementing the indexed corpus.
+// Keep these deliberate policy exceptions distinct from the much larger book-derived word stores.
+using System;
+using System.Collections.Generic;
+
+namespace KeyJaya
+{
+    public static class Vocabulary
+    {
+        public static readonly Dictionary<string, string> Terms = Create();
+        static Dictionary<string, string> Create()
+        {
+            var terms = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string word in "varṇa śiva mathurā gosvāmīpāda paramātmā devī mahārāṇī tamāla satsvarūpa nitāi gaura sārvabhauma bhaṭṭācārya dāsa dāsī mahārāja śrīla śikhā varuṇa sārārtha darśinī kṛṣṇa śruti puṣṭi mārga tulasī āsana yaśodā pūrṇimā vaiṣṇava ācārya śāstra śrīmad bhāgavata bhagavān bhagavad saṁhitā siddhānta tattva bhakti bhakta nāma saṅkīrtana kīrtana śravaṇa smaraṇa vandana arcana sevā līlā prema mādhurya aiśvarya vātsalya sakhya dāsya śānta śakti svarūpa śuddha śraddhā niṣṭhā ruci āsakti rāga rāgānugā rāgātmikā vaidhī sādhana sādhaka sādhu sādhus kṛpā dīkṣā śikṣā guru paramparā sampradāya pūjā pūjārī prasāda mahāprasāda śālagrāma śāligrāma ārati parikramā praṇāma daṇḍavat maṅgala pūrva uttara madhya ādi antya gopī gopāla govinda gopīnātha gopījana rādhā rādhikā rādhārāṇī mādhava mādhavī mādhavendra mālatī mādhurī lalitā viśākhā mañjarī vṛndā vṛndāvana navadvīpa māyāpura jagannātha nityānanda advaita gadādhara śrīvāsa caitanya mahāprabhu prabhupāda haridāsa narottama śyāmānanda śrīnivāsa bhaktivinoda bhaktisiddhānta bhaktivedānta viśvanātha jīva rūpa sanātana raghunātha rāmacandra baladeva balarāma vasudeva vāsudeva devakī nandā nanda arjuna bhīma yudhiṣṭhira kuntī draupadī kaunteya pārtha hanumān rāma sītā lakṣmaṇa bharata śiva durgā gaṇeśa gaṇeśa sarasvatī lakṣmī viṣṇu nārāyaṇa brahmā brahmaṇa brāhmaṇa kṣatriya śūdra gṛhastha brahmacārī sannyāsī gosvāmī svāmī yogī ṛṣi muni ātmā jīva avatāra paṇḍita śruti smṛti upaniṣad purāṇa īśopaniṣad vedānta saṁskṛta saṁskāra śaraṇāgati aparādha ānanda anartha adhikāra saṅga śaraṇa sevaka vaiṣṇavī kṛṣṇadāsa gaurāṅga gauracandra rādhādāsa kṛṣṇaprema".Split(' '))
+                terms[EncodingMap.Ascii(word).ToLowerInvariant()] = word;
+            terms["pandit"] = "paṇḍita";
+            terms["pundit"] = "paṇḍita";
+            terms["brhad"] = "bṛhad";
+            terms["brhat"] = "bṛhat";
+            terms["raj"] = "rāja";
+            terms["niti"] = "nīti";
+            terms["saiva"] = "śaiva";
+            terms["brahmin"] = "brāhmaṇa";
+            terms["brahmins"] = "brāhmaṇas";
+            terms["shiva"] = "śiva";
+            terms["krishna"] = "kṛṣṇa";
+            terms["shri"] = "śrī";
+            terms["shree"] = "śrī";
+            terms["shreela"] = "śrīla";
+            terms["bhakthi"] = "bhakti";
+            terms["shikha"] = "śikhā";
+            terms["darshini"] = "darśinī";
+            terms["saarartha"] = "sārārtha";
+            return terms;
+        }
+    }
 }

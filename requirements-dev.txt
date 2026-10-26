@@ -1,0 +1,4 @@
+# Optional tooling only. Neither building the resident nor running KeyJaya needs
+# these packages. Pinning keeps documentation renders and formatting consistent.
+black==26.10.1
+Pillow==13.0.0

@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "scope": "Deterministic editor-capability models; not live native applications",
+  "profiles": [
+    {"id": "word", "range_delay": 0, "ignore_range": false, "keyboard_first": false},
+    {"id": "browser-plain", "range_delay": 0, "ignore_range": true, "keyboard_first": false},
+    {"id": "browser-rich", "range_delay": 2, "ignore_range": false, "keyboard_first": false},
+    {"id": "indesign-text", "range_delay": 0, "ignore_range": false, "keyboard_first": false},
+    {"id": "indesign-find", "range_delay": 0, "ignore_range": false, "keyboard_first": true},
+    {"id": "excel-cell", "range_delay": 0, "ignore_range": false, "keyboard_first": true}
+  ],
+  "cases": [
+    {"input": "prasada", "expected": "prasāda"},
+    {"input": "Krsna", "expected": "Kṛṣṇa"},
+    {"input": "Vyasa-puja", "expected": "Vyāsa-pūjā"},
+    {"input": "Bhaktivedanta", "expected": "Bhaktivedanta"},
+    {"input": "Brahman", "expected": "Brahman"},
+    {"input": "an age since", "expected": "an age since"},
+    {"input": "Earlier untouched prasada and Krsna.", "expected": "Earlier untouched prasāda and Kṛṣṇa."},
+    {"input": "śāstra śikhā mārga", "expected": "śāstra śikhā mārga"},
+    {"input": "24 prasada 108", "expected": "24 prasāda 108"}
+  ]
+}

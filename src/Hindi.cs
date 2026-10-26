@@ -1,35 +1,686 @@
-using System;using System.Linq;using System.Collections.Generic;using System.Text;using System.Text.RegularExpressions;
-namespace KeyJaya {
-public static class Hindi {
- static readonly HashSet<string> HindiSignals=new HashSet<string>("है हैं हूँ हूं नहीं मुझे तुम्हें आपको आपका आपकी आपके मेरा मेरी मेरे तुम्हारा तुम्हारी तुम्हारे हमारा हमारी हमारे यहाँ वहां वहाँ कहाँ क्यों कैसे क्योंकि लेकिन और मैं".Split(' '),StringComparer.Ordinal);
- static readonly HashSet<string> SanskritSignals=new HashSet<string>("ॐ नमः नमो अस्ति सन्ति भवति उवाच इति एव तथा च वा अथ अहम् त्वम्".Split(' '),StringComparer.Ordinal);
- static bool ClauseBoundary(char c){return c=='\r'||c=='\n'||c=='.'||c=='!'||c=='?'||c==';'||c=='।'||c=='॥'||c=='|';}
- public static bool SanskritForm(string word){return word.IndexOf('ः')>=0||word.EndsWith(":",StringComparison.Ordinal)||word.EndsWith("्",StringComparison.Ordinal)||Regex.IsMatch(word,@"ाय$|ेभ्य[ः:]?$|ाभ्यां$|ानाम्$");}
- // Bounded local evidence, independent of the tray's output-language choice.
- // Dictionary overlap alone cannot distinguish a shared Hindi/Sanskrit spelling.
- public static bool UseHindiReading(string word,string context,int offset,Func<string,bool> sanskrit,Func<string,bool> hindi){
-  if(string.IsNullOrEmpty(word)||SanskritForm(word))return false;
-  if(context==null)context=word;if(offset<0||offset>context.Length)offset=0;
-  int start=offset,end=Math.Min(context.Length,offset+word.Length),low=Math.Max(0,start-160),high=Math.Min(context.Length,end+160);
-  while(start>low&&!ClauseBoundary(context[start-1]))start--;while(end<high&&!ClauseBoundary(context[end]))end++;
-  bool hindiContext=false,sanskritContext=false;foreach(Match token in Regex.Matches(context.Substring(start,end-start),@"[\u0900-\u097f]+")){if(HindiSignals.Contains(token.Value))hindiContext=true;if(SanskritSignals.Contains(token.Value)||token.Value.IndexOf('ः')>=0)sanskritContext=true;}
-  if(sanskritContext)return false;if(hindiContext)return true;
-  if(sanskrit!=null&&sanskrit(word))return false;
-  return hindi!=null&&hindi(word);
- }
- // Explicit phrase evidence resolves a few frequent ambiguities; isolated kala retains काल.
- public static string Context(string input,string mode,Func<string,bool> personal=null){return Regex.Replace(input,@"(?<![\p{L}\p{M}])kala([ \t]+)(rang|kapda|dhan)(?![\p{L}\p{M}])",m=>personal!=null&&personal(m.Value)?m.Value:IndicScripts.FromIast("kālā",mode)+m.Groups[1].Value+(mode=="bengali"&&m.Groups[2].Value.Equals("rang",StringComparison.OrdinalIgnoreCase)?"রং":IndicScripts.FromIast(IndicScripts.ToIast(m.Groups[2].Value.Equals("rang",StringComparison.OrdinalIgnoreCase)?"रंग":m.Groups[2].Value.Equals("kapda",StringComparison.OrdinalIgnoreCase)?"कपड़ा":"धन"),mode)),RegexOptions.IgnoreCase|RegexOptions.CultureInvariant);}
- sealed class Unit {public string Text;public bool Implicit,Consonant;public Unit(string text,bool implicitA,bool consonant){Text=text;Implicit=implicitA;Consonant=consonant;}public bool Vowel{get{return Text.Length>0&&"aāiīuūṛṝḷḹeēoō".IndexOf(Text[Text.Length-1])>=0;}}}
- public static string ToIast(string text){return Regex.Replace(text,@"[\u0900-\u097f\u200c\u200d]+",m=>WordIast(m.Value));}
- static string WordIast(string text){if(text=="आगमन")return "āgaman";var units=new List<Unit>();for(int i=0;i<text.Length;){char c=text[i];bool consonant=c>='क'&&c<='ह'||c>='क़'&&c<='य़';if(consonant){int begin=i++;if(i<text.Length&&text[i]=='़')i++;bool implicitA=true;if(i<text.Length&&"ािीुूृॄॢॣेैोौॅॉ्".IndexOf(text[i])>=0){implicitA=false;i++;}while(i<text.Length&&"ंँः".IndexOf(text[i])>=0){implicitA=false;i++;}units.Add(new Unit(IndicScripts.ToIast(text.Substring(begin,i-begin)),implicitA,true));}else{units.Add(new Unit(IndicScripts.ToIast(c.ToString()),false,false));i++;}}
-  if(units.Count(x=>x.Vowel)>1&&units.Count>0&&units[units.Count-1].Implicit){var last=units[units.Count-1];if(last.Text.EndsWith("a"))last.Text=last.Text.Substring(0,last.Text.Length-1);}
-  for(int i=units.Count-2;i>0;i--)if(units[i].Implicit&&units[i].Text.EndsWith("a")&&units[i-1].Vowel&&units[i+1].Consonant&&units[i+1].Vowel)units[i].Text=units[i].Text.Substring(0,units[i].Text.Length-1);
-  return string.Concat(units.Select(x=>x.Text));
- }
- public static string Alias(string input){return Regex.Replace(EncodingMap.Ascii(input).ToLowerInvariant(),@"chh|shh|aa|ee|ii|oo|uu|sh|w",m=>m.Value=="chh"?"ch":m.Value=="shh"||m.Value=="sh"?"s":m.Value=="aa"?"a":m.Value=="ee"||m.Value=="ii"?"i":m.Value=="oo"||m.Value=="uu"?"u":"v");}
- public static string PhoneticScript(string input){string phonetic=Regex.Replace(input.ToLowerInvariant(),@"chh|aa|ee|ii|oo|uu|sh|w",m=>m.Value=="chh"?"ch":m.Value=="aa"?"ā":m.Value=="ee"||m.Value=="ii"?"ī":m.Value=="oo"||m.Value=="uu"?"ū":m.Value=="sh"?"ś":"v");string result=IndicScripts.FromIast(phonetic,"devanagari");if(result.Any(c=>char.IsLetter(c)&&!(c>='\u0900'&&c<='\u097f')))return input;if(result.EndsWith("्")&&!input.EndsWith(".h"))result=result.Substring(0,result.Length-1);return result;}
- public static readonly Dictionary<string,string> Common=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase){
- {"hare","हरे"},{"phool","फूल"},{"phul","फूल"},{"aapka","आपका"},{"apka","आपका"},{"āpkā","आपका"},{"aap","आप"},{"main","मैं"},{"mein","में"},{"mujhe","मुझे"},{"mera","मेरा"},{"meri","मेरी"},{"mere","मेरे"},{"tum","तुम"},{"tumhara","तुम्हारा"},{"ham","हम"},{"hum","हम"},{"hamara","हमारा"},{"hamari","हमारी"},{"hamare","हमारे"},{"hai","है"},{"hain","हैं"},{"ho","हो"},{"tha","था"},{"thi","थी"},{"the","थे"},{"nahi","नहीं"},{"nahin","नहीं"},{"kya","क्या"},{"kaise","कैसे"},{"kyon","क्यों"},{"kyun","क्यों"},{"yahan","यहाँ"},{"yahaan","यहाँ"},{"wahan","वहाँ"},{"wahaan","वहाँ"},{"kahan","कहाँ"},{"kahaan","कहाँ"},{"kab","कब"},{"ab","अब"},{"aaj","आज"},{"kal","कल"},{"kala","काल"},{"kale","काले"},{"rang","रंग"},{"bharat","भारत"},{"bhārat","भारत"},{"hindi","हिंदी"},{"hindee","हिंदी"},{"hindustan","हिंदुस्तान"},{"duniya","दुनिया"},{"sarkar","सरकार"},{"sarkaar","सरकार"},{"namaste","नमस्ते"},{"dhanyavad","धन्यवाद"},{"dhanyavaad","धन्यवाद"},{"shukriya","शुक्रिया"},{"accha","अच्छा"},{"achha","अच्छा"},{"achchha","अच्छा"},{"acchi","अच्छी"},{"bada","बड़ा"},{"badi","बड़ी"},{"baṛā","बड़ा"},{"baṛī","बड़ी"},{"chota","छोटा"},{"chhota","छोटा"},{"choti","छोटी"},{"chhoti","छोटी"},{"ladka","लड़का"},{"ladki","लड़की"},{"ladkiyan","लड़कियाँ"},{"laṛkā","लड़का"},{"laṛkī","लड़की"},{"pani","पानी"},{"paani","पानी"},{"doodh","दूध"},{"dudh","दूध"},{"roti","रोटी"},{"rotee","रोटी"},{"bhai","भाई"},{"bhaai","भाई"},{"chai","चाय"},{"chaay","चाय"},{"ghar","घर"},{"school","स्कूल"},{"computer","कंप्यूटर"},{"phone","फ़ोन"},{"khoob","खूब"},{"khub","खूब"},{"door","दूर"},{"dur","दूर"},{"poora","पूरा"},{"pura","पूरा"},{"poori","पूरी"},{"puri","पूरी"},{"zaroor","ज़रूर"},{"zarur","ज़रूर"},{"zindagi","ज़िंदगी"},{"sundar","सुंदर"},{"samay","समय"},{"kitab","किताब"},{"kitaab","किताब"},{"kamra","कमरा"},{"kamraa","कमरा"},{"namkin","नमकीन"},{"namkeen","नमकीन"},{"khana","खाना"},{"khaana","खाना"},{"peena","पीना"},{"pina","पीना"},{"karna","करना"},{"karo","करो"},{"kiya","किया"},{"karunga","करूँगा"},{"karoonga","करूँगा"},{"karenge","करेंगे"},{"gaya","गया"},{"gayi","गई"},{"gaye","गए"},{"jana","जाना"},{"jaana","जाना"},{"jao","जाओ"},{"jaunga","जाऊँगा"},{"jaoonga","जाऊँगा"},{"krishna","कृष्ण"},{"vishnu","विष्णु"},{"pooja","पूजा"},{"puja","पूजा"},{"manav","मानव"},{"insan","इंसान"},{"insaan","इंसान"}
- };
-}
+// KeyJaya: Hindi word/context readings layered on the explicit script-conversion tools.
+// Ambiguous Sanskrit readings and ordinary English protection are decided by the calling conversion policy.
+using System;
+using System.Linq;
+using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace KeyJaya
+{
+    public static class Hindi
+    {
+        static readonly HashSet<string> HindiSignals = new HashSet<string>("है हैं हूँ हूं नहीं मुझे तुम्हें आपको आपका आपकी आपके मेरा मेरी मेरे तुम्हारा तुम्हारी तुम्हारे हमारा हमारी हमारे यहाँ वहां वहाँ कहाँ क्यों कैसे क्योंकि लेकिन और मैं".Split(' '), StringComparer.Ordinal);
+        static readonly HashSet<string> SanskritSignals = new HashSet<string>("ॐ नमः नमो अस्ति सन्ति भवति उवाच इति एव तथा च वा अथ अहम् त्वम्".Split(' '), StringComparer.Ordinal);
+        static bool ClauseBoundary(char c)
+        {
+            return c == '\r' || c == '\n' || c == '.' || c == '!' || c == '?' || c == ';' || c == '।' || c == '॥' || c == '|';
+        }
+
+        public static bool SanskritForm(string word)
+        {
+            return word.IndexOf('ः') >= 0 || word.EndsWith(":", StringComparison.Ordinal) || word.EndsWith("्", StringComparison.Ordinal) || Regex.IsMatch(word, @"ाय$|ेभ्य[ः:]?$|ाभ्यां$|ानाम्$");
+        }
+
+        // Bounded local evidence, independent of the tray's output-language choice.
+        // Dictionary overlap alone cannot distinguish a shared Hindi/Sanskrit spelling.
+        public static bool UseHindiReading(string word, string context, int offset, Func<string, bool> sanskrit, Func<string, bool> hindi)
+        {
+            if (string.IsNullOrEmpty(word) || SanskritForm(word))
+                return false;
+            if (context == null)
+                context = word;
+            if (offset < 0 || offset > context.Length)
+                offset = 0;
+            int start = offset, end = Math.Min(context.Length, offset + word.Length), low = Math.Max(0, start - 160), high = Math.Min(context.Length, end + 160);
+            while (start > low && !ClauseBoundary(context[start - 1]))
+                start--;
+            while (end < high && !ClauseBoundary(context[end]))
+                end++;
+            bool hindiContext = false, sanskritContext = false;
+            foreach (Match token in Regex.Matches(context.Substring(start, end - start), @"[\u0900-\u097f]+"))
+            {
+                if (HindiSignals.Contains(token.Value))
+                    hindiContext = true;
+                if (SanskritSignals.Contains(token.Value) || token.Value.IndexOf('ः') >= 0)
+                    sanskritContext = true;
+            }
+
+            if (sanskritContext)
+                return false;
+            if (hindiContext)
+                return true;
+            if (sanskrit != null && sanskrit(word))
+                return false;
+            return hindi != null && hindi(word);
+        }
+
+        // Explicit phrase evidence resolves a few frequent ambiguities; isolated kala retains काल.
+        public static string Context(string input, string mode, Func<string, bool> personal = null)
+        {
+            return Regex.Replace(input, @"(?<![\p{L}\p{M}])kala([ \t]+)(rang|kapda|dhan)(?![\p{L}\p{M}])", m => personal != null && personal(m.Value) ? m.Value : IndicScripts.FromIast("kālā", mode) + m.Groups[1].Value + (mode == "bengali" && m.Groups[2].Value.Equals("rang", StringComparison.OrdinalIgnoreCase) ? "রং" : IndicScripts.FromIast(IndicScripts.ToIast(m.Groups[2].Value.Equals("rang", StringComparison.OrdinalIgnoreCase) ? "रंग" : m.Groups[2].Value.Equals("kapda", StringComparison.OrdinalIgnoreCase) ? "कपड़ा" : "धन"), mode)), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
+        sealed class Unit
+        {
+            public string Text;
+            public bool Implicit, Consonant;
+            public Unit(string text, bool implicitA, bool consonant)
+            {
+                Text = text;
+                Implicit = implicitA;
+                Consonant = consonant;
+            }
+
+            public bool Vowel
+            {
+                get
+                {
+                    return Text.Length > 0 && "aāiīuūṛṝḷḹeēoō".IndexOf(Text[Text.Length - 1]) >= 0;
+                }
+            }
+        }
+
+        public static string ToIast(string text)
+        {
+            return Regex.Replace(text, @"[\u0900-\u097f\u200c\u200d]+", m => WordIast(m.Value));
+        }
+
+        static string WordIast(string text)
+        {
+            if (text == "आगमन")
+                return "āgaman";
+            var units = new List<Unit>();
+            for (int i = 0; i < text.Length;)
+            {
+                char c = text[i];
+                bool consonant = c >= 'क' && c <= 'ह' || c >= 'क़' && c <= 'य़';
+                if (consonant)
+                {
+                    int begin = i++;
+                    if (i < text.Length && text[i] == '़')
+                        i++;
+                    bool implicitA = true;
+                    if (i < text.Length && "ािीुूृॄॢॣेैोौॅॉ्".IndexOf(text[i]) >= 0)
+                    {
+                        implicitA = false;
+                        i++;
+                    }
+
+                    while (i < text.Length && "ंँः".IndexOf(text[i]) >= 0)
+                    {
+                        implicitA = false;
+                        i++;
+                    }
+
+                    units.Add(new Unit(IndicScripts.ToIast(text.Substring(begin, i - begin)), implicitA, true));
+                }
+                else
+                {
+                    units.Add(new Unit(IndicScripts.ToIast(c.ToString()), false, false));
+                    i++;
+                }
+            }
+
+            if (units.Count(x => x.Vowel) > 1 && units.Count > 0 && units[units.Count - 1].Implicit)
+            {
+                var last = units[units.Count - 1];
+                if (last.Text.EndsWith("a"))
+                    last.Text = last.Text.Substring(0, last.Text.Length - 1);
+            }
+
+            for (int i = units.Count - 2; i > 0; i--)
+                if (units[i].Implicit && units[i].Text.EndsWith("a") && units[i - 1].Vowel && units[i + 1].Consonant && units[i + 1].Vowel)
+                    units[i].Text = units[i].Text.Substring(0, units[i].Text.Length - 1);
+            return string.Concat(units.Select(x => x.Text));
+        }
+
+        public static string Alias(string input)
+        {
+            return Regex.Replace(EncodingMap.Ascii(input).ToLowerInvariant(), @"chh|shh|aa|ee|ii|oo|uu|sh|w", m => m.Value == "chh" ? "ch" : m.Value == "shh" || m.Value == "sh" ? "s" : m.Value == "aa" ? "a" : m.Value == "ee" || m.Value == "ii" ? "i" : m.Value == "oo" || m.Value == "uu" ? "u" : "v");
+        }
+
+        public static string PhoneticScript(string input)
+        {
+            string phonetic = Regex.Replace(input.ToLowerInvariant(), @"chh|aa|ee|ii|oo|uu|sh|w", m => m.Value == "chh" ? "ch" : m.Value == "aa" ? "ā" : m.Value == "ee" || m.Value == "ii" ? "ī" : m.Value == "oo" || m.Value == "uu" ? "ū" : m.Value == "sh" ? "ś" : "v");
+            string result = IndicScripts.FromIast(phonetic, "devanagari");
+            if (result.Any(c => char.IsLetter(c) && !(c >= '\u0900' && c <= '\u097f')))
+                return input;
+            if (result.EndsWith("्") && !input.EndsWith(".h"))
+                result = result.Substring(0, result.Length - 1);
+            return result;
+        }
+
+        public static readonly Dictionary<string, string> Common = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            {
+                "hare",
+                "हरे"
+            },
+            {
+                "phool",
+                "फूल"
+            },
+            {
+                "phul",
+                "फूल"
+            },
+            {
+                "aapka",
+                "आपका"
+            },
+            {
+                "apka",
+                "आपका"
+            },
+            {
+                "āpkā",
+                "आपका"
+            },
+            {
+                "aap",
+                "आप"
+            },
+            {
+                "main",
+                "मैं"
+            },
+            {
+                "mein",
+                "में"
+            },
+            {
+                "mujhe",
+                "मुझे"
+            },
+            {
+                "mera",
+                "मेरा"
+            },
+            {
+                "meri",
+                "मेरी"
+            },
+            {
+                "mere",
+                "मेरे"
+            },
+            {
+                "tum",
+                "तुम"
+            },
+            {
+                "tumhara",
+                "तुम्हारा"
+            },
+            {
+                "ham",
+                "हम"
+            },
+            {
+                "hum",
+                "हम"
+            },
+            {
+                "hamara",
+                "हमारा"
+            },
+            {
+                "hamari",
+                "हमारी"
+            },
+            {
+                "hamare",
+                "हमारे"
+            },
+            {
+                "hai",
+                "है"
+            },
+            {
+                "hain",
+                "हैं"
+            },
+            {
+                "ho",
+                "हो"
+            },
+            {
+                "tha",
+                "था"
+            },
+            {
+                "thi",
+                "थी"
+            },
+            {
+                "the",
+                "थे"
+            },
+            {
+                "nahi",
+                "नहीं"
+            },
+            {
+                "nahin",
+                "नहीं"
+            },
+            {
+                "kya",
+                "क्या"
+            },
+            {
+                "kaise",
+                "कैसे"
+            },
+            {
+                "kyon",
+                "क्यों"
+            },
+            {
+                "kyun",
+                "क्यों"
+            },
+            {
+                "yahan",
+                "यहाँ"
+            },
+            {
+                "yahaan",
+                "यहाँ"
+            },
+            {
+                "wahan",
+                "वहाँ"
+            },
+            {
+                "wahaan",
+                "वहाँ"
+            },
+            {
+                "kahan",
+                "कहाँ"
+            },
+            {
+                "kahaan",
+                "कहाँ"
+            },
+            {
+                "kab",
+                "कब"
+            },
+            {
+                "ab",
+                "अब"
+            },
+            {
+                "aaj",
+                "आज"
+            },
+            {
+                "kal",
+                "कल"
+            },
+            {
+                "kala",
+                "काल"
+            },
+            {
+                "kale",
+                "काले"
+            },
+            {
+                "rang",
+                "रंग"
+            },
+            {
+                "bharat",
+                "भारत"
+            },
+            {
+                "bhārat",
+                "भारत"
+            },
+            {
+                "hindi",
+                "हिंदी"
+            },
+            {
+                "hindee",
+                "हिंदी"
+            },
+            {
+                "hindustan",
+                "हिंदुस्तान"
+            },
+            {
+                "duniya",
+                "दुनिया"
+            },
+            {
+                "sarkar",
+                "सरकार"
+            },
+            {
+                "sarkaar",
+                "सरकार"
+            },
+            {
+                "namaste",
+                "नमस्ते"
+            },
+            {
+                "dhanyavad",
+                "धन्यवाद"
+            },
+            {
+                "dhanyavaad",
+                "धन्यवाद"
+            },
+            {
+                "shukriya",
+                "शुक्रिया"
+            },
+            {
+                "accha",
+                "अच्छा"
+            },
+            {
+                "achha",
+                "अच्छा"
+            },
+            {
+                "achchha",
+                "अच्छा"
+            },
+            {
+                "acchi",
+                "अच्छी"
+            },
+            {
+                "bada",
+                "बड़ा"
+            },
+            {
+                "badi",
+                "बड़ी"
+            },
+            {
+                "baṛā",
+                "बड़ा"
+            },
+            {
+                "baṛī",
+                "बड़ी"
+            },
+            {
+                "chota",
+                "छोटा"
+            },
+            {
+                "chhota",
+                "छोटा"
+            },
+            {
+                "choti",
+                "छोटी"
+            },
+            {
+                "chhoti",
+                "छोटी"
+            },
+            {
+                "ladka",
+                "लड़का"
+            },
+            {
+                "ladki",
+                "लड़की"
+            },
+            {
+                "ladkiyan",
+                "लड़कियाँ"
+            },
+            {
+                "laṛkā",
+                "लड़का"
+            },
+            {
+                "laṛkī",
+                "लड़की"
+            },
+            {
+                "pani",
+                "पानी"
+            },
+            {
+                "paani",
+                "पानी"
+            },
+            {
+                "doodh",
+                "दूध"
+            },
+            {
+                "dudh",
+                "दूध"
+            },
+            {
+                "roti",
+                "रोटी"
+            },
+            {
+                "rotee",
+                "रोटी"
+            },
+            {
+                "bhai",
+                "भाई"
+            },
+            {
+                "bhaai",
+                "भाई"
+            },
+            {
+                "chai",
+                "चाय"
+            },
+            {
+                "chaay",
+                "चाय"
+            },
+            {
+                "ghar",
+                "घर"
+            },
+            {
+                "school",
+                "स्कूल"
+            },
+            {
+                "computer",
+                "कंप्यूटर"
+            },
+            {
+                "phone",
+                "फ़ोन"
+            },
+            {
+                "khoob",
+                "खूब"
+            },
+            {
+                "khub",
+                "खूब"
+            },
+            {
+                "door",
+                "दूर"
+            },
+            {
+                "dur",
+                "दूर"
+            },
+            {
+                "poora",
+                "पूरा"
+            },
+            {
+                "pura",
+                "पूरा"
+            },
+            {
+                "poori",
+                "पूरी"
+            },
+            {
+                "puri",
+                "पूरी"
+            },
+            {
+                "zaroor",
+                "ज़रूर"
+            },
+            {
+                "zarur",
+                "ज़रूर"
+            },
+            {
+                "zindagi",
+                "ज़िंदगी"
+            },
+            {
+                "sundar",
+                "सुंदर"
+            },
+            {
+                "samay",
+                "समय"
+            },
+            {
+                "kitab",
+                "किताब"
+            },
+            {
+                "kitaab",
+                "किताब"
+            },
+            {
+                "kamra",
+                "कमरा"
+            },
+            {
+                "kamraa",
+                "कमरा"
+            },
+            {
+                "namkin",
+                "नमकीन"
+            },
+            {
+                "namkeen",
+                "नमकीन"
+            },
+            {
+                "khana",
+                "खाना"
+            },
+            {
+                "khaana",
+                "खाना"
+            },
+            {
+                "peena",
+                "पीना"
+            },
+            {
+                "pina",
+                "पीना"
+            },
+            {
+                "karna",
+                "करना"
+            },
+            {
+                "karo",
+                "करो"
+            },
+            {
+                "kiya",
+                "किया"
+            },
+            {
+                "karunga",
+                "करूँगा"
+            },
+            {
+                "karoonga",
+                "करूँगा"
+            },
+            {
+                "karenge",
+                "करेंगे"
+            },
+            {
+                "gaya",
+                "गया"
+            },
+            {
+                "gayi",
+                "गई"
+            },
+            {
+                "gaye",
+                "गए"
+            },
+            {
+                "jana",
+                "जाना"
+            },
+            {
+                "jaana",
+                "जाना"
+            },
+            {
+                "jao",
+                "जाओ"
+            },
+            {
+                "jaunga",
+                "जाऊँगा"
+            },
+            {
+                "jaoonga",
+                "जाऊँगा"
+            },
+            {
+                "krishna",
+                "कृष्ण"
+            },
+            {
+                "vishnu",
+                "विष्णु"
+            },
+            {
+                "pooja",
+                "पूजा"
+            },
+            {
+                "puja",
+                "पूजा"
+            },
+            {
+                "manav",
+                "मानव"
+            },
+            {
+                "insan",
+                "इंसान"
+            },
+            {
+                "insaan",
+                "इंसान"
+            }
+        };
+    }
 }

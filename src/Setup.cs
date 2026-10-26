@@ -1,53 +1,623 @@
-using System;using System.IO;using System.IO.Compression;using System.Diagnostics;using System.Reflection;using System.Text;using System.Text.RegularExpressions;using System.Collections.Generic;using System.Linq;using System.Threading;using Microsoft.Win32;using System.Windows.Forms;
-namespace KeyJaya {public static class Setup {
- [System.Runtime.InteropServices.DllImport("shell32.dll",CharSet=System.Runtime.InteropServices.CharSet.Unicode)]static extern void SHChangeNotify(uint eventId,uint flags,string first,IntPtr second);
- static void RefreshFileIcons(string root){foreach(string relative in new[]{"engine/keyjaya-app.exe","KeyJaya-Uninstall.exe","assets/keyjaya.ico","KeyJaya.lnk"})SHChangeNotify(0x2000,0x5,Path.Combine(root,relative),IntPtr.Zero);}
- const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run",UninstallKey=@"Software\Microsoft\Windows\CurrentVersion\Uninstall\KeyJaya";
- sealed class Result {public bool Success;public string Error;}
- [STAThread] public static int Main(string[] args){
-  bool test=args.Length>0&&args[0]=="--test-install",fault=false;string destination=null,legacy=null,espanso=null;
-  try{if(args.Length>0){if(!test||args.Length<2||string.IsNullOrWhiteSpace(args[1]))throw new ArgumentException();destination=Path.GetFullPath(args[1]);for(int i=2;i<args.Length;i++){if(args[i]=="--fail-after-swap"&&!fault){fault=true;continue;}if(i+1>=args.Length||string.IsNullOrWhiteSpace(args[i+1]))throw new ArgumentException();if(args[i]=="--legacy-root"&&legacy==null)legacy=Path.GetFullPath(args[++i]);else if(args[i]=="--espanso-config"&&espanso==null)espanso=Path.GetFullPath(args[++i]);else throw new ArgumentException();}}else{espanso=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"espanso");legacy=Path.Combine(espanso,"keyjaya");destination=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),"KeyJaya");}}catch{Console.Error.WriteLine("Invalid setup arguments; nothing was changed.");return 2;}
-  if(!test){Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);}
-  bool desktop=false;try{bool upgrade=File.Exists(ApplicationShortcuts.Executable(destination))||legacy!=null&&File.Exists(ApplicationShortcuts.Executable(legacy));bool? saved=SetupPreferences.ReadDesktop(destination);bool owned=!test&&!saved.HasValue&&upgrade&&ApplicationShortcuts.OwnedBy(ApplicationShortcuts.DesktopPath,destination,legacy);bool? choice=SetupPreferences.ResolveDesktop(saved,upgrade,owned);
-   if(choice.HasValue)desktop=choice.Value;else if(!test){DialogResult answer=MessageBox.Show("Create a desktop shortcut?\n\nKeyJaya will also be added to the Start menu so you can find it in app launchers.","KeyJaya setup",MessageBoxButtons.YesNoCancel,MessageBoxIcon.Question);if(answer==DialogResult.Cancel)return 0;desktop=answer==DialogResult.Yes;}
-  }catch(Exception ex){string message="The desktop shortcut preference could not be read.\n\n"+ex.Message;if(test)Console.Error.WriteLine(message);else MessageBox.Show(message,"KeyJaya setup",MessageBoxButtons.OK,MessageBoxIcon.Error);return 1;}
-  if(test){Result result=Install(destination,legacy,espanso,true,fault,desktop,null);if(result.Success)Console.WriteLine("TEST INSTALL OK: "+destination);else Console.Error.WriteLine(result.Error);return result.Success?0:1;}
-  using(var window=new SetupProgressWindow()){
-   window.Shown+=(sender,e)=>{var worker=new Thread(()=>{Result result=Install(destination,legacy,espanso,false,fault,desktop,window.Report);if(result.Success)window.Complete(()=>StartApp(destination,"--open-cheat-sheet"));else window.Fail(result.Error);});worker.SetApartmentState(ApartmentState.STA);worker.Start();};
-   Application.Run(window);return window.Succeeded?0:1;
-  }
- }
- static Result Install(string destination,string legacy,string espanso,bool test,bool fault,bool desktop,Action<string,int> progress){
-  Action<string,int> report=(text,value)=>{if(progress!=null)progress(text,value);};
-  string stage=destination+".staging-"+Guid.NewGuid().ToString("N");bool appsTouched=false;Dictionary<string,object> oldRun=null,oldRegistration=null;ShortcutTransaction shortcuts=null;
-  EspansoMigration service=null;InstallTransaction deployment=null;string phase="preparing installation";string espansoExe=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","Espanso","espansod.exe");
-  try{
-   report("Extracting application files…",0);Directory.CreateDirectory(stage);using(Stream payload=Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip"))using(ZipArchive zip=new ZipArchive(payload,ZipArchiveMode.Read)){int count=0;foreach(var entry in zip.Entries){string target=Path.GetFullPath(Path.Combine(stage,entry.FullName.Replace('/',Path.DirectorySeparatorChar)));if(!target.StartsWith(stage+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Unsafe archive path");if(entry.FullName.EndsWith("/")){Directory.CreateDirectory(target);continue;}Directory.CreateDirectory(Path.GetDirectoryName(target));using(Stream input=entry.Open())using(Stream output=File.Create(target))input.CopyTo(output);report("Extracting application files ("+(++count)+"/"+zip.Entries.Count+")…",25*count/Math.Max(1,zip.Entries.Count));}}
-   phase="preserving configuration";report("Preserving your settings and triggers…",30);Directory.CreateDirectory(Path.Combine(stage,"state"));Migrate(stage,destination,legacy,espanso);RemoveEspansoDemo(stage);Configuration.AddRequestedShortTriggers(stage);SetupPreferences.SaveDesktop(stage,desktop);
-   phase="preparing launch shortcut";report("Preparing shortcuts…",40);ApplicationShortcuts.Write(Path.Combine(stage,ApplicationShortcuts.FileName),destination);
-   phase="checking application files";report("Checking application files…",45);using(Core c=new Core(stage))using(IndexedStore data=new IndexedStore(Path.Combine(stage,"data"),"conversion")){if(data.Get("krsna")!="kṛṣṇa"||Numbers.Single("123")!="one hundred twenty-three"||File.ReadAllText(Path.Combine(stage,"VERSION")).Trim()!=Version.Current)throw new InvalidDataException("Release self-check failed");}
-   phase="stopping previous apps";report("Preparing to update KeyJaya…",50);if(!test){oldRun=Snapshot(RunKey);oldRegistration=Snapshot(UninstallKey);if(File.Exists(espansoExe)){service=new EspansoMigration(arg=>Command(espansoExe,arg));service.Inspect();}appsTouched=true;StopResidents(destination,legacy);if(service!=null)service.Disable();}
-   phase="replacing application files";report("Backing up and updating application files…",55);deployment=new InstallTransaction(destination,stage);deployment.Apply((count,total)=>report("Updating application files ("+count+"/"+total+")…",55+30*count/Math.Max(1,total)));deployment.Retire(Path.Combine("config",Configuration.PersonalFile));
-   if(fault)throw new InvalidOperationException("Test-only failure after installation swap");
-   phase="registering and starting KeyJaya";report("Finishing installation…",90);if(!test){using(RegistryKey key=Registry.CurrentUser.CreateSubKey(RunKey)){if(StartupSettings.IsLegacyCommand(key.GetValue("KeyJayaApp") as string,legacy))key.DeleteValue("KeyJayaApp",false);if(new StartupSettings(Path.Combine(Configuration.Folder(destination),"settings.ini")).Enabled)key.SetValue("KeyJaya","\""+Path.Combine(destination,"engine","keyjaya-app.exe")+"\"");else key.DeleteValue("KeyJaya",false);}using(RegistryKey key=Registry.CurrentUser.CreateSubKey(UninstallKey)){key.SetValue("DisplayName","KeyJaya");key.SetValue("DisplayVersion",Version.Current);key.SetValue("InstallLocation",destination);key.SetValue("DisplayIcon",Path.Combine(destination,"assets","keyjaya.ico"));key.SetValue("UninstallString","\""+Path.Combine(destination,"KeyJaya-Uninstall.exe")+"\"");}shortcuts=new ShortcutTransaction(destination,legacy);shortcuts.Apply(ApplicationShortcuts.StartMenuPath);if(desktop)shortcuts.Apply(ApplicationShortcuts.DesktopPath);RefreshFileIcons(destination);StartApp(destination);}report("Installation complete.",100);return new Result{Success=true};
-  }catch(Exception ex){report("Restoring the previous installation…",95);Exception shortcutRollback=null;try{if(shortcuts!=null)shortcuts.Rollback();}catch(Exception rollback){shortcutRollback=rollback;}try{if(deployment!=null)deployment.Rollback();if(!test){if(oldRun!=null)Restore(RunKey,oldRun);if(oldRegistration!=null)Restore(UninstallKey,oldRegistration);if(service!=null)service.Rollback();if(appsTouched&&File.Exists(Path.Combine(destination,"engine","keyjaya-app.exe")))StartApp(destination);else if(appsTouched&&legacy!=null&&File.Exists(Path.Combine(legacy,"engine","keyjaya-app.exe")))StartApp(legacy);}}catch(Exception rollback){ex=new Exception(ex.Message+"; rollback needs attention: "+rollback.Message);}if(shortcutRollback!=null)ex=new Exception(ex.Message+"; shortcut rollback needs attention: "+shortcutRollback.Message,ex);string log=Path.Combine(Path.GetTempPath(),"KeyJaya-Setup-"+Guid.NewGuid().ToString("N")+".log");try{File.WriteAllText(log,"Version: "+Version.Current+"\r\nPhase: "+phase+"\r\n"+ex.ToString());}catch{log=null;}return new Result{Success=false,Error="KeyJaya setup failed while "+phase+": "+ex.Message+(log==null?"":"\n\nDiagnostic log: "+log)};}
- }
- static void RemoveEspansoDemo(string root){foreach(string path in new[]{Configuration.Short(root),Path.Combine(Configuration.Folder(root),Configuration.PersonalFile)})if(File.Exists(path)){var rows=Configuration.Read(path);if(rows.Remove(":espanso"))Configuration.Write(path,rows);}}
- static Dictionary<string,object> Snapshot(string name){using(RegistryKey key=Registry.CurrentUser.OpenSubKey(name))return key==null?new Dictionary<string,object>():key.GetValueNames().ToDictionary(x=>x,x=>key.GetValue(x));}
- static void Restore(string name,Dictionary<string,object> rows){using(RegistryKey key=Registry.CurrentUser.CreateSubKey(name)){foreach(string old in key.GetValueNames())if(!rows.ContainsKey(old))key.DeleteValue(old,false);foreach(var row in rows)key.SetValue(row.Key,row.Value);}}
- static ServiceResult Command(string exe,string args){using(Process p=Process.Start(new ProcessStartInfo(exe,args){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true})){var output=p.StandardOutput.ReadToEndAsync();var error=p.StandardError.ReadToEndAsync();if(!p.WaitForExit(15000)){try{p.Kill();}catch{}throw new InvalidOperationException("Espanso command timed out: "+args);}string detail=(error.Result+" "+output.Result).Trim();if(detail.Length>1000)detail=detail.Substring(0,1000);return new ServiceResult(p.ExitCode,detail);}}
+// KeyJaya: Installer orchestration: staged extraction, configuration preservation, deployment, and integration.
+// The test-install path is isolated from startup/registration and must never launch the resident.
+using System;
+using System.IO;
+using System.IO.Compression;
+using System.Diagnostics;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using Microsoft.Win32;
+using System.Windows.Forms;
 
- static void StartApp(string root,string arguments=""){using(Process process=Process.Start(new ProcessStartInfo(Path.Combine(root,"engine","keyjaya-app.exe"),arguments){UseShellExecute=true,WindowStyle=ProcessWindowStyle.Hidden})){} }
- static void StopResidents(params string[] roots){int session;using(Process installer=Process.GetCurrentProcess())session=installer.SessionId;foreach(Process p in Process.GetProcessesByName("keyjaya-app")){try{if(p.SessionId!=session)continue;string file=p.MainModule.FileName,product=FileVersionInfo.GetVersionInfo(file).ProductName;if(ResidentReplacement.Owns(file,product,p.SessionId,session,roots)){p.Kill();if(!p.WaitForExit(5000))throw new IOException("The previous KeyJaya process did not exit. Close it before retrying setup.");}}catch(InvalidOperationException){}finally{p.Dispose();}}}
- static void Copy(string from,string to){if((File.GetAttributes(from)&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Configuration links must be migrated manually: "+from);Directory.CreateDirectory(to);foreach(string file in Directory.GetFiles(from)){if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("Configuration links must be migrated manually");File.Copy(file,Path.Combine(to,Path.GetFileName(file)),true);}foreach(string dir in Directory.GetDirectories(from))Copy(dir,Path.Combine(to,Path.GetFileName(dir)));}
- static void Migrate(string stage,string destination,string legacy,string espanso){
-  if(Directory.Exists(Configuration.Folder(destination))){if(!File.Exists(Configuration.Personal(destination)))throw new InvalidDataException("Missing trigger YAML in the existing configuration; restore it before upgrading.");Copy(Configuration.Folder(destination),Configuration.Folder(stage));if(Directory.Exists(Path.Combine(destination,"state")))Copy(Path.Combine(destination,"state"),Path.Combine(stage,"state"));if(Directory.Exists(Path.Combine(destination,"backups")))Copy(Path.Combine(destination,"backups"),Path.Combine(stage,"backups"));if(!File.Exists(Configuration.Short(destination))){var merged=Configuration.Read(Configuration.Short(stage));Configuration.Merge(merged,Configuration.Read(Configuration.Personal(destination)),true);Configuration.Write(Configuration.Short(stage),merged);}Configuration.Read(Configuration.Personal(stage));RetirePersonal(stage);return;}
-  Dictionary<string,string> rows=new Dictionary<string,string>(StringComparer.Ordinal);string saved=Path.Combine(stage,"backups","legacy-config");
-  if(espanso!=null&&Directory.Exists(Path.Combine(espanso,"match"))){string match=Path.Combine(espanso,"match");Copy(match,Path.Combine(saved,"espanso-match"));foreach(string file in Directory.GetFiles(match,"*",SearchOption.AllDirectories)){if(!file.EndsWith(".yml",StringComparison.OrdinalIgnoreCase)&&!file.EndsWith(".yaml",StringComparison.OrdinalIgnoreCase))continue;string name=Path.GetFileName(file);if(name=="number-to-words.yml"||name=="number-to-ordinal.yml"){ValidateNumber(file,name=="number-to-ordinal.yml");continue;}Configuration.Merge(rows,Configuration.Read(file,true),false);}}
-  if(legacy!=null&&Directory.Exists(legacy)){foreach(string dir in new[]{"personal","config","state"})if(Directory.Exists(Path.Combine(legacy,dir)))Copy(Path.Combine(legacy,dir),Path.Combine(saved,dir));foreach(string file in Directory.GetFiles(legacy)){Directory.CreateDirectory(saved);File.Copy(file,Path.Combine(saved,Path.GetFileName(file)),true);}foreach(string name in new[]{"overrides.tsv","diacritics-overrides.tsv","conversion-rules.tsv","script-spellings.tsv","script-phrases.tsv","word-spellings.tsv","settings.ini"}){string target=Path.Combine(Configuration.Folder(stage),name);foreach(string source in new[]{Path.Combine(legacy,name),Path.Combine(legacy,"personal",name)})if(File.Exists(source)){if(name.EndsWith(".tsv")){List<string> combined=File.ReadAllLines(target).ToList();foreach(string row in File.ReadAllLines(source))if(row.Trim()!=""&&!row.StartsWith("#")&&!combined.Contains(row))combined.Add(row);File.WriteAllLines(target,combined,new UTF8Encoding(false));}else File.Copy(source,target,true);}}foreach(string source in new[]{Path.Combine(legacy,"personal_triggers.yml"),Path.Combine(legacy,"personal","personal_triggers.yml")})Configuration.Merge(rows,Configuration.Read(source,true),true);string shortFile=Path.Combine(legacy,"personal","short-triggers.tsv");if(File.Exists(shortFile))foreach(string line in File.ReadAllLines(shortFile)){if(line==""||line.StartsWith("#"))continue;string[] fields=line.Split(new[]{'\t'},2);if(fields.Length!=2)throw new InvalidDataException("Invalid legacy short trigger");rows[fields[0]]=fields[1];}string preference=Path.Combine(legacy,"personal","preferred-spellings.tsv");if(File.Exists(preference))File.Copy(preference,Path.Combine(stage,"state","preferred-spellings.tsv"),true);}
-  var defaults=Configuration.Read(Configuration.Short(stage));if(rows.Count>0){Configuration.Merge(defaults,rows,true);Configuration.Write(Configuration.Short(stage),defaults);}Configuration.Read(Configuration.Short(stage));RetirePersonal(stage);
- }
- static void RetirePersonal(string stage){string old=Path.Combine(Configuration.Folder(stage),Configuration.PersonalFile);if(!File.Exists(old))return;string saved=Path.Combine(stage,"backups","previous-personal-triggers.yml");Directory.CreateDirectory(Path.GetDirectoryName(saved));File.Copy(old,saved,true);File.Delete(old);}
- static void ValidateNumber(string file,bool ordinal){string text=File.ReadAllText(file);string expected=ordinal?@"(?P<number>(?:\d{1,3}(?:,\d{3})*|\d+))(?:st|nd|rd|th)::":@"(?P<number>(?:\d{1,3}(?:,\d{3})*|\d+))::";Match regex=Regex.Match(text,@"(?m)^\s*- regex:\s*'([^']+)'\s*$");string error="Modified number trigger needs explicit migration: "+file;if(!regex.Success||(regex.Groups[1].Value!=expected&&regex.Groups[1].Value!=@"\b"+expected+"$")||Regex.Matches(text,@"(?m)^\s*- (trigger|regex):").Count!=1)throw new InvalidDataException(error);List<string> lines=File.ReadAllLines(file).Select(x=>x.Trim()).Where(x=>x!=""&&!x.StartsWith("#")&&!x.StartsWith("- regex:")&&!x.StartsWith("label:")).ToList();string[] required={"matches:","replace: '{{output}}'","vars:","- name: output","type: script","params:","args:","- '%CONFIG%/keyjaya/engine/keyjaya-number.exe'","- '{{number}}'"};if(ordinal)required=required.Concat(new[]{"- 'ordinal'"}).ToArray();if(!lines.SequenceEqual(required))throw new InvalidDataException(error);}
-}}
+namespace KeyJaya
+{
+    public static class Setup
+    {
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern void SHChangeNotify(uint eventId, uint flags, string first, IntPtr second);
+        static void RefreshFileIcons(string root)
+        {
+            foreach (string relative in new[]
+            {
+                "engine/keyjaya-app.exe",
+                "KeyJaya-Uninstall.exe",
+                "assets/keyjaya.ico",
+                "KeyJaya.lnk"
+            }
 
+            )
+                SHChangeNotify(0x2000, 0x5, Path.Combine(root, relative), IntPtr.Zero);
+        }
+
+        const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run", UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\KeyJaya";
+        sealed class Result
+        {
+            public bool Success;
+            public string Error;
+        }
+
+        [STAThread]
+        public static int Main(string[] args)
+        {
+            bool test = args.Length > 0 && args[0] == "--test-install", fault = false;
+            string destination = null, legacy = null, espanso = null;
+            try
+            {
+                if (args.Length > 0)
+                {
+                    if (!test || args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                        throw new ArgumentException();
+                    destination = Path.GetFullPath(args[1]);
+                    for (int i = 2; i < args.Length; i++)
+                    {
+                        if (args[i] == "--fail-after-swap" && !fault)
+                        {
+                            fault = true;
+                            continue;
+                        }
+
+                        if (i + 1 >= args.Length || string.IsNullOrWhiteSpace(args[i + 1]))
+                            throw new ArgumentException();
+                        if (args[i] == "--legacy-root" && legacy == null)
+                            legacy = Path.GetFullPath(args[++i]);
+                        else if (args[i] == "--espanso-config" && espanso == null)
+                            espanso = Path.GetFullPath(args[++i]);
+                        else
+                            throw new ArgumentException();
+                    }
+                }
+                else
+                {
+                    espanso = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "espanso");
+                    legacy = Path.Combine(espanso, "keyjaya");
+                    destination = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "KeyJaya");
+                }
+            }
+            catch
+            {
+                Console.Error.WriteLine("Invalid setup arguments; nothing was changed.");
+                return 2;
+            }
+
+            if (!test)
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+            }
+
+            bool desktop = false;
+            try
+            {
+                bool upgrade = File.Exists(ApplicationShortcuts.Executable(destination)) || legacy != null && File.Exists(ApplicationShortcuts.Executable(legacy));
+                bool? saved = SetupPreferences.ReadDesktop(destination);
+                bool owned = !test && !saved.HasValue && upgrade && ApplicationShortcuts.OwnedBy(ApplicationShortcuts.DesktopPath, destination, legacy);
+                bool? choice = SetupPreferences.ResolveDesktop(saved, upgrade, owned);
+                if (choice.HasValue)
+                    desktop = choice.Value;
+                else if (!test)
+                {
+                    DialogResult answer = MessageBox.Show("Create a desktop shortcut?\n\nKeyJaya will also be added to the Start menu so you can find it in app launchers.", "KeyJaya setup", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+                    if (answer == DialogResult.Cancel)
+                        return 0;
+                    desktop = answer == DialogResult.Yes;
+                }
+            }
+            catch (Exception ex)
+            {
+                string message = "The desktop shortcut preference could not be read.\n\n" + ex.Message;
+                if (test)
+                    Console.Error.WriteLine(message);
+                else
+                    MessageBox.Show(message, "KeyJaya setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 1;
+            }
+
+            if (test)
+            {
+                Result result = Install(destination, legacy, espanso, true, fault, desktop, null);
+                if (result.Success)
+                    Console.WriteLine("TEST INSTALL OK: " + destination);
+                else
+                    Console.Error.WriteLine(result.Error);
+                return result.Success ? 0 : 1;
+            }
+
+            using (var window = new SetupProgressWindow())
+            {
+                window.Shown += (sender, e) =>
+                {
+                    var worker = new Thread(() =>
+                    {
+                        Result result = Install(destination, legacy, espanso, false, fault, desktop, window.Report);
+                        if (result.Success)
+                            window.Complete(() => StartApp(destination, "--open-cheat-sheet"));
+                        else
+                            window.Fail(result.Error);
+                    });
+                    worker.SetApartmentState(ApartmentState.STA);
+                    worker.Start();
+                };
+                Application.Run(window);
+                return window.Succeeded ? 0 : 1;
+            }
+        }
+
+        static Result Install(string destination, string legacy, string espanso, bool test, bool fault, bool desktop, Action<string, int> progress)
+        {
+            Action<string, int> report = (text, value) =>
+            {
+                if (progress != null)
+                    progress(text, value);
+            };
+            string stage = destination + ".staging-" + Guid.NewGuid().ToString("N");
+            bool appsTouched = false;
+            Dictionary<string, object> oldRun = null, oldRegistration = null;
+            ShortcutTransaction shortcuts = null;
+            EspansoMigration service = null;
+            InstallTransaction deployment = null;
+            string phase = "preparing installation";
+            string espansoExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Espanso", "espansod.exe");
+            try
+            {
+                report("Extracting application files…", 0);
+                Directory.CreateDirectory(stage);
+                using (Stream payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip"))
+                using (ZipArchive zip = new ZipArchive(payload, ZipArchiveMode.Read))
+                {
+                    int count = 0;
+                    foreach (var entry in zip.Entries)
+                    {
+                        string target = Path.GetFullPath(Path.Combine(stage, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
+                        if (!target.StartsWith(stage + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("Unsafe archive path");
+                        if (entry.FullName.EndsWith("/"))
+                        {
+                            Directory.CreateDirectory(target);
+                            continue;
+                        }
+
+                        Directory.CreateDirectory(Path.GetDirectoryName(target));
+                        using (Stream input = entry.Open())
+                        using (Stream output = File.Create(target))
+                            input.CopyTo(output);
+                        report("Extracting application files (" + (++count) + "/" + zip.Entries.Count + ")…", 25 * count / Math.Max(1, zip.Entries.Count));
+                    }
+                }
+
+                phase = "preserving configuration";
+                report("Preserving your settings and triggers…", 30);
+                Directory.CreateDirectory(Path.Combine(stage, "state"));
+                Configuration.CreateDefaultTriggers(stage);
+                Migrate(stage, destination, legacy, espanso);
+                RemoveEspansoDemo(stage);
+                Configuration.AddRequestedShortTriggers(stage);
+                SetupPreferences.SaveDesktop(stage, desktop);
+                phase = "preparing launch shortcut";
+                report("Preparing shortcuts…", 40);
+                ApplicationShortcuts.Write(Path.Combine(stage, ApplicationShortcuts.FileName), destination);
+                phase = "checking application files";
+                report("Checking application files…", 45);
+                using (Core c = new Core(stage))
+                using (IndexedStore data = new IndexedStore(Path.Combine(stage, "data"), "conversion"))
+                {
+                    if (data.Get("krsna") != "kṛṣṇa" || Numbers.Single("123") != "one hundred twenty-three" || File.ReadAllText(Path.Combine(stage, "VERSION")).Trim() != Version.Current)
+                        throw new InvalidDataException("Release self-check failed");
+                }
+
+                phase = "stopping previous apps";
+                report("Preparing to update KeyJaya…", 50);
+                if (!test)
+                {
+                    oldRun = Snapshot(RunKey);
+                    oldRegistration = Snapshot(UninstallKey);
+                    if (File.Exists(espansoExe))
+                    {
+                        service = new EspansoMigration(arg => Command(espansoExe, arg));
+                        service.Inspect();
+                    }
+
+                    appsTouched = true;
+                    StopResidents(destination, legacy);
+                    if (service != null)
+                        service.Disable();
+                }
+
+                phase = "replacing application files";
+                report("Backing up and updating application files…", 55);
+                deployment = new InstallTransaction(destination, stage);
+                deployment.Apply((count, total) => report("Updating application files (" + count + "/" + total + ")…", 55 + 30 * count / Math.Max(1, total)));
+                deployment.Retire(Path.Combine("config", Configuration.PersonalFile));
+                // Factory-only files superseded by the canonical YAML. Apply already saved
+                // their original bytes in the transaction backup; user TSV settings stay.
+                deployment.Retire(Path.Combine("assets", "short-trigger-additions.yml"));
+                deployment.Retire(Path.Combine("data", "short-triggers.tsv"));
+                // Read the complete policy before retiring anything. It contains
+                // factory/source-only paths, never editable configuration or indexes.
+                foreach (string relative in DistributionFiles.Read(Path.Combine(destination, "assets", DistributionFiles.Manifest)))
+                    deployment.Retire(relative.Replace('/', Path.DirectorySeparatorChar));
+                if (fault)
+                    throw new InvalidOperationException("Test-only failure after installation swap");
+                phase = "registering and starting KeyJaya";
+                report("Finishing installation…", 90);
+                if (!test)
+                {
+                    using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RunKey))
+                    {
+                        if (StartupSettings.IsLegacyCommand(key.GetValue("KeyJayaApp") as string, legacy))
+                            key.DeleteValue("KeyJayaApp", false);
+                        if (new StartupSettings(Path.Combine(Configuration.Folder(destination), "settings.ini")).Enabled)
+                            key.SetValue("KeyJaya", "\"" + Path.Combine(destination, "engine", "keyjaya-app.exe") + "\"");
+                        else
+                            key.DeleteValue("KeyJaya", false);
+                    }
+
+                    using (RegistryKey key = Registry.CurrentUser.CreateSubKey(UninstallKey))
+                    {
+                        key.SetValue("DisplayName", "KeyJaya");
+                        key.SetValue("DisplayVersion", Version.Current);
+                        key.SetValue("InstallLocation", destination);
+                        key.SetValue("DisplayIcon", Path.Combine(destination, "assets", "keyjaya.ico"));
+                        key.SetValue("UninstallString", "\"" + Path.Combine(destination, "KeyJaya-Uninstall.exe") + "\"");
+                    }
+
+                    shortcuts = new ShortcutTransaction(destination, legacy);
+                    shortcuts.Apply(ApplicationShortcuts.StartMenuPath);
+                    if (desktop)
+                        shortcuts.Apply(ApplicationShortcuts.DesktopPath);
+                    RefreshFileIcons(destination);
+                    StartApp(destination);
+                }
+
+                report("Installation complete.", 100);
+                return new Result
+                {
+                    Success = true
+                };
+            }
+            catch (Exception ex)
+            {
+                report("Restoring the previous installation…", 95);
+                Exception shortcutRollback = null;
+                try
+                {
+                    if (shortcuts != null)
+                        shortcuts.Rollback();
+                }
+                catch (Exception rollback)
+                {
+                    shortcutRollback = rollback;
+                }
+
+                try
+                {
+                    if (deployment != null)
+                        deployment.Rollback();
+                    if (!test)
+                    {
+                        if (oldRun != null)
+                            Restore(RunKey, oldRun);
+                        if (oldRegistration != null)
+                            Restore(UninstallKey, oldRegistration);
+                        if (service != null)
+                            service.Rollback();
+                        if (appsTouched && File.Exists(Path.Combine(destination, "engine", "keyjaya-app.exe")))
+                            StartApp(destination);
+                        else if (appsTouched && legacy != null && File.Exists(Path.Combine(legacy, "engine", "keyjaya-app.exe")))
+                            StartApp(legacy);
+                    }
+                }
+                catch (Exception rollback)
+                {
+                    ex = new Exception(ex.Message + "; rollback needs attention: " + rollback.Message);
+                }
+
+                if (shortcutRollback != null)
+                    ex = new Exception(ex.Message + "; shortcut rollback needs attention: " + shortcutRollback.Message, ex);
+                string log = Path.Combine(Path.GetTempPath(), "KeyJaya-Setup-" + Guid.NewGuid().ToString("N") + ".log");
+                try
+                {
+                    File.WriteAllText(log, "Version: " + Version.Current + "\r\nPhase: " + phase + "\r\n" + ex.ToString());
+                }
+                catch
+                {
+                    log = null;
+                }
+
+                return new Result
+                {
+                    Success = false,
+                    Error = "KeyJaya setup failed while " + phase + ": " + ex.Message + (log == null ? "" : "\n\nDiagnostic log: " + log)
+                };
+            }
+        }
+
+        static void RemoveEspansoDemo(string root)
+        {
+            foreach (string path in new[]
+            {
+                Configuration.Short(root),
+                Path.Combine(Configuration.Folder(root), Configuration.PersonalFile)
+            }
+
+            )
+                if (File.Exists(path))
+                {
+                    var rows = Configuration.Read(path);
+                    if (rows.Remove(":espanso"))
+                        Configuration.Write(path, rows);
+                }
+        }
+
+        static Dictionary<string, object> Snapshot(string name)
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(name))
+                return key == null ? new Dictionary<string, object>() : key.GetValueNames().ToDictionary(x => x, x => key.GetValue(x));
+        }
+
+        static void Restore(string name, Dictionary<string, object> rows)
+        {
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(name))
+            {
+                foreach (string old in key.GetValueNames())
+                    if (!rows.ContainsKey(old))
+                        key.DeleteValue(old, false);
+                foreach (var row in rows)
+                    key.SetValue(row.Key, row.Value);
+            }
+        }
+
+        static ServiceResult Command(string exe, string args)
+        {
+            using (Process p = Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }))
+            {
+                var output = p.StandardOutput.ReadToEndAsync();
+                var error = p.StandardError.ReadToEndAsync();
+                if (!p.WaitForExit(15000))
+                {
+                    try
+                    {
+                        p.Kill();
+                    }
+                    catch
+                    {
+                    }
+
+                    throw new InvalidOperationException("Espanso command timed out: " + args);
+                }
+
+                string detail = (error.Result + " " + output.Result).Trim();
+                if (detail.Length > 1000)
+                    detail = detail.Substring(0, 1000);
+                return new ServiceResult(p.ExitCode, detail);
+            }
+        }
+
+        static void StartApp(string root, string arguments = "")
+        {
+            using (Process process = Process.Start(new ProcessStartInfo(Path.Combine(root, "engine", "keyjaya-app.exe"), arguments) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden }))
+            {
+            }
+        }
+
+        static void StopResidents(params string[] roots)
+        {
+            int session;
+            using (Process installer = Process.GetCurrentProcess())
+                session = installer.SessionId;
+            foreach (Process p in Process.GetProcessesByName("keyjaya-app"))
+            {
+                try
+                {
+                    if (p.SessionId != session)
+                        continue;
+                    string file = p.MainModule.FileName, product = FileVersionInfo.GetVersionInfo(file).ProductName;
+                    if (ResidentReplacement.Owns(file, product, p.SessionId, session, roots))
+                    {
+                        p.Kill();
+                        if (!p.WaitForExit(5000))
+                            throw new IOException("The previous KeyJaya process did not exit. Close it before retrying setup.");
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                finally
+                {
+                    p.Dispose();
+                }
+            }
+        }
+
+        static void Copy(string from, string to)
+        {
+            if ((File.GetAttributes(from) & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("Configuration links must be migrated manually: " + from);
+            Directory.CreateDirectory(to);
+            foreach (string file in Directory.GetFiles(from))
+            {
+                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException("Configuration links must be migrated manually");
+                File.Copy(file, Path.Combine(to, Path.GetFileName(file)), true);
+            }
+
+            foreach (string dir in Directory.GetDirectories(from))
+                Copy(dir, Path.Combine(to, Path.GetFileName(dir)));
+        }
+
+        static void Migrate(string stage, string destination, string legacy, string espanso)
+        {
+            if (Directory.Exists(Configuration.Folder(destination)))
+            {
+                if (!File.Exists(Configuration.Personal(destination)))
+                    throw new InvalidDataException("Missing trigger YAML in the existing configuration; restore it before upgrading.");
+                Copy(Configuration.Folder(destination), Configuration.Folder(stage));
+                if (Directory.Exists(Path.Combine(destination, "state")))
+                    Copy(Path.Combine(destination, "state"), Path.Combine(stage, "state"));
+                if (Directory.Exists(Path.Combine(destination, "backups")))
+                    Copy(Path.Combine(destination, "backups"), Path.Combine(stage, "backups"));
+                if (!File.Exists(Configuration.Short(destination)))
+                {
+                    var merged = Configuration.Read(Configuration.Short(stage));
+                    Configuration.Merge(merged, Configuration.Read(Configuration.Personal(destination)), true);
+                    Configuration.Write(Configuration.Short(stage), merged);
+                }
+
+                Configuration.Read(Configuration.Personal(stage));
+                RetirePersonal(stage);
+                return;
+            }
+
+            Dictionary<string, string> rows = new Dictionary<string, string>(StringComparer.Ordinal);
+            string saved = Path.Combine(stage, "backups", "legacy-config");
+            if (espanso != null && Directory.Exists(Path.Combine(espanso, "match")))
+            {
+                string match = Path.Combine(espanso, "match");
+                Copy(match, Path.Combine(saved, "espanso-match"));
+                foreach (string file in Directory.GetFiles(match, "*", SearchOption.AllDirectories))
+                {
+                    if (!file.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    string name = Path.GetFileName(file);
+                    if (name == "number-to-words.yml" || name == "number-to-ordinal.yml")
+                    {
+                        ValidateNumber(file, name == "number-to-ordinal.yml");
+                        continue;
+                    }
+
+                    Configuration.Merge(rows, Configuration.Read(file, true), false);
+                }
+            }
+
+            if (legacy != null && Directory.Exists(legacy))
+            {
+                foreach (string dir in new[]
+                {
+                    "personal",
+                    "config",
+                    "state"
+                }
+
+                )
+                    if (Directory.Exists(Path.Combine(legacy, dir)))
+                        Copy(Path.Combine(legacy, dir), Path.Combine(saved, dir));
+                foreach (string file in Directory.GetFiles(legacy))
+                {
+                    Directory.CreateDirectory(saved);
+                    File.Copy(file, Path.Combine(saved, Path.GetFileName(file)), true);
+                }
+
+                foreach (string name in new[]
+                {
+                    "overrides.tsv",
+                    "diacritics-overrides.tsv",
+                    "conversion-rules.tsv",
+                    "script-spellings.tsv",
+                    "script-phrases.tsv",
+                    "word-spellings.tsv",
+                    "settings.ini"
+                }
+
+                )
+                {
+                    string target = Path.Combine(Configuration.Folder(stage), name);
+                    foreach (string source in new[]
+                    {
+                        Path.Combine(legacy, name),
+                        Path.Combine(legacy, "personal", name)
+                    }
+
+                    )
+                        if (File.Exists(source))
+                        {
+                            if (name.EndsWith(".tsv"))
+                            {
+                                List<string> combined = File.Exists(target) ? File.ReadAllLines(target).ToList() : new List<string>();
+                                foreach (string row in File.ReadAllLines(source))
+                                    if (row.Trim() != "" && !row.StartsWith("#") && !combined.Contains(row))
+                                        combined.Add(row);
+                                File.WriteAllLines(target, combined, new UTF8Encoding(false));
+                            }
+                            else
+                                File.Copy(source, target, true);
+                        }
+                }
+
+                foreach (string source in new[]
+                {
+                    Path.Combine(legacy, "personal_triggers.yml"),
+                    Path.Combine(legacy, "personal", "personal_triggers.yml")
+                }
+
+                )
+                    Configuration.Merge(rows, Configuration.Read(source, true), true);
+                string shortFile = Path.Combine(legacy, "personal", "short-triggers.tsv");
+                if (File.Exists(shortFile))
+                    foreach (string line in File.ReadAllLines(shortFile))
+                    {
+                        if (line == "" || line.StartsWith("#"))
+                            continue;
+                        string[] fields = line.Split(new[] { '\t' }, 2);
+                        if (fields.Length != 2)
+                            throw new InvalidDataException("Invalid legacy short trigger");
+                        rows[fields[0]] = fields[1];
+                    }
+
+                string preference = Path.Combine(legacy, "personal", "preferred-spellings.tsv");
+                if (File.Exists(preference))
+                    File.Copy(preference, Path.Combine(stage, "state", "preferred-spellings.tsv"), true);
+            }
+
+            var defaults = Configuration.Read(Configuration.Short(stage));
+            if (rows.Count > 0)
+            {
+                Configuration.Merge(defaults, rows, true);
+                Configuration.Write(Configuration.Short(stage), defaults);
+            }
+
+            Configuration.Read(Configuration.Short(stage));
+            RetirePersonal(stage);
+        }
+
+        static void RetirePersonal(string stage)
+        {
+            string old = Path.Combine(Configuration.Folder(stage), Configuration.PersonalFile);
+            if (!File.Exists(old))
+                return;
+            string saved = Path.Combine(stage, "backups", "previous-personal-triggers.yml");
+            Directory.CreateDirectory(Path.GetDirectoryName(saved));
+            File.Copy(old, saved, true);
+            File.Delete(old);
+        }
+
+        static void ValidateNumber(string file, bool ordinal)
+        {
+            string text = File.ReadAllText(file);
+            string expected = ordinal ? @"(?P<number>(?:\d{1,3}(?:,\d{3})*|\d+))(?:st|nd|rd|th)::" : @"(?P<number>(?:\d{1,3}(?:,\d{3})*|\d+))::";
+            Match regex = Regex.Match(text, @"(?m)^\s*- regex:\s*'([^']+)'\s*$");
+            string error = "Modified number trigger needs explicit migration: " + file;
+            if (!regex.Success || (regex.Groups[1].Value != expected && regex.Groups[1].Value != @"\b" + expected + "$") || Regex.Matches(text, @"(?m)^\s*- (trigger|regex):").Count != 1)
+                throw new InvalidDataException(error);
+            List<string> lines = File.ReadAllLines(file).Select(x => x.Trim()).Where(x => x != "" && !x.StartsWith("#") && !x.StartsWith("- regex:") && !x.StartsWith("label:")).ToList();
+            string[] required =
+            {
+                "matches:",
+                "replace: '{{output}}'",
+                "vars:",
+                "- name: output",
+                "type: script",
+                "params:",
+                "args:",
+                "- '%CONFIG%/keyjaya/engine/keyjaya-number.exe'",
+                "- '{{number}}'"
+            };
+            if (ordinal)
+                required = required.Concat(new[] { "- 'ordinal'" }).ToArray();
+            if (!lines.SequenceEqual(required))
+                throw new InvalidDataException(error);
+        }
+    }
+}

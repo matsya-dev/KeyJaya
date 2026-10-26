@@ -1,6 +1,74 @@
-﻿using System;using System.IO;using System.Diagnostics;using System.Windows.Forms;using Microsoft.Win32;using System.Linq;
-namespace KeyJaya {public static class Uninstall {
- [STAThread]public static int Main(){string root=AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);using(RegistryKey registration=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\KeyJaya")){string installed=registration==null?null:registration.GetValue("InstallLocation") as string;if(installed==null||!Path.GetFullPath(installed).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(root),StringComparison.OrdinalIgnoreCase)){MessageBox.Show("Run the uninstaller from the registered KeyJaya installation.","KeyJaya");return 1;}}if(MessageBox.Show("Disable KeyJaya and remove its startup entry and Start menu/desktop shortcuts?\nYour configuration and installed files will be preserved.","KeyJaya",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return 0;
-  foreach(Process p in Process.GetProcessesByName("keyjaya-app")){try{if(p.MainModule.FileName.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)){p.Kill();p.WaitForExit(5000);}}catch(InvalidOperationException){}finally{p.Dispose();}}
-  using(RegistryKey k=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run",true)){if(k!=null)k.DeleteValue("KeyJaya",false);}Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\KeyJaya",false);string warning="";try{ApplicationShortcuts.RemoveOwned(ApplicationShortcuts.StartMenuPath,root);ApplicationShortcuts.RemoveOwned(ApplicationShortcuts.DesktopPath,root);string folder=ApplicationShortcuts.ProgramsFolder;if(Directory.Exists(folder)&&(File.GetAttributes(folder)&FileAttributes.ReparsePoint)==0&&!Directory.EnumerateFileSystemEntries(folder).Any())Directory.Delete(folder);}catch(Exception ex){warning="\n\nA launch shortcut could not be removed: "+ex.Message;}MessageBox.Show("KeyJaya is disabled. Your files remain in "+root+warning,"KeyJaya");return 0;
-}}}
+// KeyJaya: Remove KeyJaya's owned Windows integration while retaining installed data and configuration.
+// Only owned shortcuts/registrations are removed; user files are intentionally left for explicit review.
+using System;
+using System.IO;
+using System.Diagnostics;
+using System.Windows.Forms;
+using Microsoft.Win32;
+using System.Linq;
+
+namespace KeyJaya
+{
+    public static class Uninstall
+    {
+        [STAThread]
+        public static int Main()
+        {
+            string root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+            using (RegistryKey registration = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\KeyJaya"))
+            {
+                string installed = registration == null ? null : registration.GetValue("InstallLocation") as string;
+                if (installed == null || !Path.GetFullPath(installed).TrimEnd(Path.DirectorySeparatorChar).Equals(Path.GetFullPath(root), StringComparison.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("Run the uninstaller from the registered KeyJaya installation.", "KeyJaya");
+                    return 1;
+                }
+            }
+
+            if (MessageBox.Show("Disable KeyJaya and remove its startup entry and Start menu/desktop shortcuts?\nYour configuration and installed files will be preserved.", "KeyJaya", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return 0;
+            foreach (Process p in Process.GetProcessesByName("keyjaya-app"))
+            {
+                try
+                {
+                    if (p.MainModule.FileName.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    {
+                        p.Kill();
+                        p.WaitForExit(5000);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                finally
+                {
+                    p.Dispose();
+                }
+            }
+
+            using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
+            {
+                if (k != null)
+                    k.DeleteValue("KeyJaya", false);
+            }
+
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\KeyJaya", false);
+            string warning = "";
+            try
+            {
+                ApplicationShortcuts.RemoveOwned(ApplicationShortcuts.StartMenuPath, root);
+                ApplicationShortcuts.RemoveOwned(ApplicationShortcuts.DesktopPath, root);
+                string folder = ApplicationShortcuts.ProgramsFolder;
+                if (Directory.Exists(folder) && (File.GetAttributes(folder) & FileAttributes.ReparsePoint) == 0 && !Directory.EnumerateFileSystemEntries(folder).Any())
+                    Directory.Delete(folder);
+            }
+            catch (Exception ex)
+            {
+                warning = "\n\nA launch shortcut could not be removed: " + ex.Message;
+            }
+
+            MessageBox.Show("KeyJaya is disabled. Your files remain in " + root + warning, "KeyJaya");
+            return 0;
+        }
+    }
+}

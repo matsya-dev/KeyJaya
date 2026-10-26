@@ -1,0 +1,14 @@
+# Files retained in development sources but not deployed with the application.
+# Setup retires previous deployed copies through its reversible transaction.
+THIRD_PARTY_NOTICES.md
+docs/LICENSING.md
+data/english-dictionary-notices.txt
+data/hindi-COPYING
+data/hindi-Copyright
+data/hindi-README_hi_IN.txt
+data/sanskrit-morphology-NOTICE.txt
+data/sanskrit-morphology-LGPLLR.pdf
+data/bbt-style-source.json
+data/hindi-source-manifest.json
+data/sanskrit-morphology-manifest.json
+data/sanskrit-morphology-source.tsv.gz

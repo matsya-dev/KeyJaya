@@ -1,30 +1,223 @@
-using System;using System.IO;using System.Text;using System.Linq;using System.Collections.Generic;
-namespace KeyJaya {public static class TriggerEditorTests {
- static int passed;static void Check(bool ok,string label){if(!ok)throw new Exception(label);passed++;}static void Reject(Action action,string label){try{action();throw new Exception("Accepted: "+label);}catch(InvalidDataException){passed++;}catch(IOException){passed++;}}
- public static int Main(string[] args){string root=Path.GetFullPath(args[0]),path=Configuration.Short(root),factory=Path.Combine(root,"editor-test-defaults.yml");byte[] saved=File.ReadAllBytes(path);
- string original="# Header stays exact.\r\nmatches:\r\n  - trigger: 'SP>'\r\n    replace: 'Śrīla Prabhupāda'\r\n    # Keep this comment.\r\n  - trigger: 'SP<'\r\n    replace: 'Çréla Prabhupäda'\r\n  - trigger: 'SP?'\r\n    replace: 'Srila Prabhupada'\r\n  # Unrelated entry/comment.\r\n  - trigger: ':signature'\r\n    replace: |-\r\n      Best wishes,\r\n      Reader # literal\r\n  - trigger: 'ZZ'\r\n    replace: 'Keep exact user text'\r\n";
- File.WriteAllText(factory,"matches:\n  - trigger: 'SP>'\n    replace: 'Factory Śrīla'\n  - trigger: 'SP<'\n    replace: 'Factory Çréla'\n  - trigger: 'SP?'\n    replace: 'Factory Srila'\n",new UTF8Encoding(false));
- Action reset=()=>File.WriteAllText(path,original,new UTF8Encoding(true));Func<TriggerEditorStore> load=()=>new TriggerEditorStore(path,factory);
- try{
-  reset();var store=load();Check(store.Entries.Count==3,"variants grouped into one abbreviation");Check(store.Entries.Single(x=>x.Name=="SP").Replacement=="Śrīla Prabhupāda","Unicode editing display");Check(store.Entries.Single(x=>x.Name==":signature").Replacement=="Best wishes,\nReader # literal","multiline/literal hashes preserved");byte[] before=File.ReadAllBytes(path);store.Save(()=>{throw new Exception("No-op save should not reload");});Check(File.ReadAllBytes(path).SequenceEqual(before),"no-op save is byte identical");
-  var added=store.NewEntry();added.Name="ZTEST";added.Replacement=TriggerEditorStore.Normalize("Çréla Prabhupäda");store.Upsert(null,added);int applied=0;store.Save(()=>applied++);Check(applied==1,"apply callback invoked exactly once");Check(File.ReadAllBytes(path).Take(3).SequenceEqual(new byte[]{239,187,191}),"UTF-8 BOM preserved");Check(File.ReadAllText(path).Contains(original.Substring(original.IndexOf("  - trigger: ':signature'",StringComparison.Ordinal))),"unrelated YAML block byte text preserved");Check(File.ReadAllBytes(Path.Combine(root,"backups","trigger-editor-previous.yml")).SequenceEqual(before),"exact original backup");
-  using(var core=new Core(root)){foreach(string mode in new[]{"unicode","balaram","plain"})Check(core.CtrlShort("ZTEST",mode)==Core.Target("Śrīla Prabhupāda",mode),"generated Ctrl outputs "+mode);Check(core.Trigger("ZTEST>")=="Śrīla Prabhupāda"&&core.Trigger("ZTEST<")=="Çréla Prabhupäda"&&core.Trigger("ZTEST?")=="Srila Prabhupada","all explicit forms generated");Check(core.CtrlShort("ztest","unicode")==null,"case sensitivity preserved");}
-  store=load();var entry=store.Entries.Single(x=>x.Name=="ZTEST");var edit=entry.Copy();edit.PlainOverride=true;edit.Plain="Custom plain output";store.Upsert(entry,edit);store.Save(null);using(var core=new Core(root))Check(core.CtrlShort("ZTEST","plain")=="Custom plain output","per-encoding override wins");
-  store=load();entry=store.Entries.Single(x=>x.Name=="SP");store.SetEnabled(entry,false);store.Save(null);Check(!Configuration.Read(path).Keys.Any(x=>TriggerEditorStore.Group(x)=="SP"),"disabled forms not active");Check(Configuration.Read(path,false,true).ContainsKey("SP>"),"disabled text retained for later re-enable");using(var core=new Core(root))Check(core.CtrlShort("SP","unicode")==null&&core.Trigger("SP>")==null,"disabled abbreviation has no hidden expansion");
-  store=load();entry=store.Entries.Single(x=>x.Name=="SP");Check(!entry.Enabled,"disabled state survives editor restart");store.SetEnabled(entry,true);store.Save(null);Check(!Configuration.Read(path).ContainsKey("SP"),"toggle does not invent a missing bare form");using(var core=new Core(root))Check(core.CtrlShort("SP","unicode")=="Śrīla Prabhupāda","re-enabled trigger works");
-  store=load();entry=store.Entries.Single(x=>x.Name=="SP");store.Restore(entry);store.Save(null);using(var core=new Core(root))Check(core.CtrlShort("SP","unicode")=="Factory Śrīla"&&core.CtrlShort("ZTEST","plain")=="Custom plain output","restore touches only selected built-in");Check(File.ReadAllText(path).Contains("# Keep this comment.")&&File.ReadAllText(path).Contains("# Header stays exact."),"edited group comments preserved");
-  store=load();entry=store.Entries.Single(x=>x.Name=="SP");store.Delete(entry);store.Save(null);Check(!Configuration.Read(path,false,true).Keys.Any(x=>TriggerEditorStore.Group(x)=="SP"),"delete removes all grouped forms");Check(Configuration.Read(path).ContainsKey("ZTEST>"),"delete preserves custom entries");
-  store=load();added=store.NewEntry();added.Name="LITERAL";added.Replacement="Bhaktivedānta café\nKrishna";added.Exact=true;store.Upsert(null,added);store.Save(null);using(var core=new Core(root))foreach(string mode in new[]{"unicode","balaram","plain"})Check(core.CtrlShort("LITERAL",mode)==added.Replacement,"exact text survives encoding and house exceptions "+mode);using(var core=new Core(root))Check(core.Trigger("LITERAL>")==added.Replacement,"exact suffix expansion");
-  store=load();entry=store.Entries.Single(x=>x.Name=="LITERAL");store.SetEnabled(entry,false);store.Save(null);store=load();entry=store.Entries.Single(x=>x.Name=="LITERAL");Check(entry.Exact&&!entry.Enabled,"exact metadata retained while disabled");store.SetEnabled(entry,true);store.Save(null);using(var core=new Core(root))Check(core.CtrlShort("LITERAL","plain")==added.Replacement,"re-enable preserves exact text");
-  store=load();entry=store.Entries.Single(x=>x.Name=="ZTEST");edit=entry.Copy();edit.Replacement="Unsaved edit";byte[] unchanged=File.ReadAllBytes(path);store.Upsert(entry,edit);Check(File.ReadAllBytes(path).SequenceEqual(unchanged),"draft edits do not write");Reject(()=>store.Save(()=>{throw new IOException("Reload failed");}),"failed reload restores original");Check(File.ReadAllBytes(path).SequenceEqual(unchanged),"failed apply restores exact original bytes");
-  store=load();entry=store.Entries.Single(x=>x.Name=="ZTEST");store.Delete(entry);File.AppendAllText(path,"# External edit\r\n");byte[] external=File.ReadAllBytes(path);Reject(()=>store.Save(null),"external modification detected");Check(File.ReadAllBytes(path).SequenceEqual(external),"external edit not overwritten");
-  foreach(string option in new[]{"enabled: yes","keep_exact: invalid","enabled: false\n    enabled: true"}){File.WriteAllText(path,"matches:\n  - trigger: 'ZZ'\n    replace: 'text'\n    "+option+"\n");Reject(()=>Configuration.Read(path),"invalid metadata rejected");}
-  File.WriteAllText(path,"matches:\n  - trigger: 'ZZ'\n    replace: 'text'\n    enabled: false\n  - trigger: 'ZZ'\n    replace: 'other'\n");Reject(()=>Configuration.Read(path),"disabled duplicate cannot hide a collision");
-  reset();store=load();var invalid=store.NewEntry();invalid.Name="bad_name";invalid.Replacement="Text";Reject(()=>store.Upsert(null,invalid),"new abbreviation must support Ctrl targeting");invalid.Name="SP";Reject(()=>store.Upsert(null,invalid),"existing abbreviation cannot be overwritten by Add");
-  File.WriteAllText(path,"matches:\n  - trigger: 'INLINE'\n    replace: old text # Keep inline comment\n");store=load();entry=store.Entries.Single();edit=entry.Copy();edit.Replacement="New text";store.Upsert(entry,edit);store.Save(null);Check(File.ReadAllText(path).Contains("# Keep inline comment"),"edited entry retains inline comment");
-  File.WriteAllText(path,"matches: []\r\n");store=load();added=store.NewEntry();added.Name="EMPTY";added.Replacement="Text";store.Upsert(null,added);store.Save(null);Check(File.ReadAllText(path).StartsWith("matches:\r\n"),"empty-list header becomes a real YAML list");Check(Configuration.Read(path).Count==4,"empty document accepts all new forms");
-  Check(TriggerEditorStore.Normalize("jñāna çakti")=="jñāna śakti","mixed Unicode and legacy paste normalized");Check(TriggerEditorStore.Normalize("ña","unicode")=="ña"&&TriggerEditorStore.Normalize("ña","balaram")=="ṣa","ambiguous input source remains controllable");
- }finally{File.WriteAllBytes(path,saved);}
- Console.WriteLine("PASS: "+passed+" FAIL: 0");return 0;
- }
-}}
+// Noninteractive regressions: lossless trigger editing, disabled/exact forms, restoration, and save conflicts.
+// Run: .\test.ps1 -Suite TriggerEditorTests. Fixtures live under out/; no resident hooks are started.
+using System;
+using System.IO;
+using System.Text;
+using System.Linq;
+using System.Collections.Generic;
+
+namespace KeyJaya
+{
+    public static class TriggerEditorTests
+    {
+        static int passed;
+        static void Check(bool ok, string label)
+        {
+            if (!ok)
+                throw new Exception(label);
+            passed++;
+        }
+
+        static void Reject(Action action, string label)
+        {
+            try
+            {
+                action();
+                throw new Exception("Accepted: " + label);
+            }
+            catch (InvalidDataException)
+            {
+                passed++;
+            }
+            catch (IOException)
+            {
+                passed++;
+            }
+        }
+
+        public static int Main(string[] args)
+        {
+            string root = Path.GetFullPath(args[0]), path = Configuration.Short(root), factory = Path.Combine(root, "editor-test-defaults.yml");
+            byte[] saved = File.ReadAllBytes(path);
+            string original = "# Header stays exact.\r\nmatches:\r\n  - trigger: 'SP>'\r\n    replace: 'Śrīla Prabhupāda'\r\n    # Keep this comment.\r\n  - trigger: 'SP<'\r\n    replace: 'Çréla Prabhupäda'\r\n  - trigger: 'SP?'\r\n    replace: 'Srila Prabhupada'\r\n  # Unrelated entry/comment.\r\n  - trigger: ':signature'\r\n    replace: |-\r\n      Best wishes,\r\n      Reader # literal\r\n  - trigger: 'ZZ'\r\n    replace: 'Keep exact user text'\r\n";
+            File.WriteAllText(factory, "matches:\n  - trigger: 'SP>'\n    replace: 'Factory Śrīla'\n  - trigger: 'SP<'\n    replace: 'Factory Çréla'\n  - trigger: 'SP?'\n    replace: 'Factory Srila'\n", new UTF8Encoding(false));
+            Action reset = () => File.WriteAllText(path, original, new UTF8Encoding(true));
+            Func<TriggerEditorStore> load = () => new TriggerEditorStore(path, factory);
+            try
+            {
+                reset();
+                var store = load();
+                Check(store.Entries.Count == 3, "variants grouped into one abbreviation");
+                Check(store.Entries.Single(x => x.Name == "SP").Replacement == "Śrīla Prabhupāda", "Unicode editing display");
+                Check(store.Entries.Single(x => x.Name == ":signature").Replacement == "Best wishes,\nReader # literal", "multiline/literal hashes preserved");
+                byte[] before = File.ReadAllBytes(path);
+                store.Save(() =>
+                {
+                    throw new Exception("No-op save should not reload");
+                });
+                Check(File.ReadAllBytes(path).SequenceEqual(before), "no-op save is byte identical");
+                var added = store.NewEntry();
+                added.Name = "ZTEST";
+                added.Replacement = TriggerEditorStore.Normalize("Çréla Prabhupäda");
+                store.Upsert(null, added);
+                int applied = 0;
+                store.Save(() => applied++);
+                Check(applied == 1, "apply callback invoked exactly once");
+                Check(File.ReadAllBytes(path).Take(3).SequenceEqual(new byte[] { 239, 187, 191 }), "UTF-8 BOM preserved");
+                Check(File.ReadAllText(path).Contains(original.Substring(original.IndexOf("  - trigger: ':signature'", StringComparison.Ordinal))), "unrelated YAML block byte text preserved");
+                Check(File.ReadAllBytes(Path.Combine(root, "backups", "trigger-editor-previous.yml")).SequenceEqual(before), "exact original backup");
+                using (var core = new Core(root))
+                {
+                    foreach (string mode in new[]
+                    {
+                        "unicode",
+                        "balaram",
+                        "plain"
+                    }
+
+                    )
+                        Check(core.CtrlShort("ZTEST", mode) == Core.Target("Śrīla Prabhupāda", mode), "generated Ctrl outputs " + mode);
+                    Check(core.Trigger("ZTEST>") == "Śrīla Prabhupāda" && core.Trigger("ZTEST<") == "Çréla Prabhupäda" && core.Trigger("ZTEST?") == "Srila Prabhupada", "all explicit forms generated");
+                    Check(core.CtrlShort("ztest", "unicode") == null, "case sensitivity preserved");
+                }
+
+                store = load();
+                var entry = store.Entries.Single(x => x.Name == "ZTEST");
+                var edit = entry.Copy();
+                edit.PlainOverride = true;
+                edit.Plain = "Custom plain output";
+                store.Upsert(entry, edit);
+                store.Save(null);
+                using (var core = new Core(root))
+                    Check(core.CtrlShort("ZTEST", "plain") == "Custom plain output", "per-encoding override wins");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "SP");
+                store.SetEnabled(entry, false);
+                store.Save(null);
+                Check(!Configuration.Read(path).Keys.Any(x => TriggerEditorStore.Group(x) == "SP"), "disabled forms not active");
+                Check(Configuration.Read(path, false, true).ContainsKey("SP>"), "disabled text retained for later re-enable");
+                using (var core = new Core(root))
+                    Check(core.CtrlShort("SP", "unicode") == null && core.Trigger("SP>") == null, "disabled abbreviation has no hidden expansion");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "SP");
+                Check(!entry.Enabled, "disabled state survives editor restart");
+                store.SetEnabled(entry, true);
+                store.Save(null);
+                Check(!Configuration.Read(path).ContainsKey("SP"), "toggle does not invent a missing bare form");
+                using (var core = new Core(root))
+                    Check(core.CtrlShort("SP", "unicode") == "Śrīla Prabhupāda", "re-enabled trigger works");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "SP");
+                store.Restore(entry);
+                store.Save(null);
+                using (var core = new Core(root))
+                    Check(core.CtrlShort("SP", "unicode") == "Factory Śrīla" && core.CtrlShort("ZTEST", "plain") == "Custom plain output", "restore touches only selected built-in");
+                Check(File.ReadAllText(path).Contains("# Keep this comment.") && File.ReadAllText(path).Contains("# Header stays exact."), "edited group comments preserved");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "SP");
+                store.Delete(entry);
+                store.Save(null);
+                Check(!Configuration.Read(path, false, true).Keys.Any(x => TriggerEditorStore.Group(x) == "SP"), "delete removes all grouped forms");
+                Check(Configuration.Read(path).ContainsKey("ZTEST>"), "delete preserves custom entries");
+                store = load();
+                added = store.NewEntry();
+                added.Name = "LITERAL";
+                added.Replacement = "Bhaktivedānta café\nKrishna";
+                added.Exact = true;
+                store.Upsert(null, added);
+                store.Save(null);
+                using (var core = new Core(root))
+                    foreach (string mode in new[]
+                    {
+                        "unicode",
+                        "balaram",
+                        "plain"
+                    }
+
+                    )
+                        Check(core.CtrlShort("LITERAL", mode) == added.Replacement, "exact text survives encoding and house exceptions " + mode);
+                using (var core = new Core(root))
+                    Check(core.Trigger("LITERAL>") == added.Replacement, "exact suffix expansion");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "LITERAL");
+                store.SetEnabled(entry, false);
+                store.Save(null);
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "LITERAL");
+                Check(entry.Exact && !entry.Enabled, "exact metadata retained while disabled");
+                store.SetEnabled(entry, true);
+                store.Save(null);
+                using (var core = new Core(root))
+                    Check(core.CtrlShort("LITERAL", "plain") == added.Replacement, "re-enable preserves exact text");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "ZTEST");
+                edit = entry.Copy();
+                edit.Replacement = "Unsaved edit";
+                byte[] unchanged = File.ReadAllBytes(path);
+                store.Upsert(entry, edit);
+                Check(File.ReadAllBytes(path).SequenceEqual(unchanged), "draft edits do not write");
+                Reject(() => store.Save(() =>
+                {
+                    throw new IOException("Reload failed");
+                }), "failed reload restores original");
+                Check(File.ReadAllBytes(path).SequenceEqual(unchanged), "failed apply restores exact original bytes");
+                store = load();
+                entry = store.Entries.Single(x => x.Name == "ZTEST");
+                store.Delete(entry);
+                File.AppendAllText(path, "# External edit\r\n");
+                byte[] external = File.ReadAllBytes(path);
+                Reject(() => store.Save(null), "external modification detected");
+                Check(File.ReadAllBytes(path).SequenceEqual(external), "external edit not overwritten");
+                foreach (string option in new[]
+                {
+                    "enabled: yes",
+                    "keep_exact: invalid",
+                    "enabled: false\n    enabled: true"
+                }
+
+                )
+                {
+                    File.WriteAllText(path, "matches:\n  - trigger: 'ZZ'\n    replace: 'text'\n    " + option + "\n");
+                    Reject(() => Configuration.Read(path), "invalid metadata rejected");
+                }
+
+                File.WriteAllText(path, "matches:\n  - trigger: 'ZZ'\n    replace: 'text'\n    enabled: false\n  - trigger: 'ZZ'\n    replace: 'other'\n");
+                Reject(() => Configuration.Read(path), "disabled duplicate cannot hide a collision");
+                reset();
+                store = load();
+                var invalid = store.NewEntry();
+                invalid.Name = "bad_name";
+                invalid.Replacement = "Text";
+                Reject(() => store.Upsert(null, invalid), "new abbreviation must support Ctrl targeting");
+                invalid.Name = "SP";
+                Reject(() => store.Upsert(null, invalid), "existing abbreviation cannot be overwritten by Add");
+                File.WriteAllText(path, "matches:\n  - trigger: 'INLINE'\n    replace: old text # Keep inline comment\n");
+                store = load();
+                entry = store.Entries.Single();
+                edit = entry.Copy();
+                edit.Replacement = "New text";
+                store.Upsert(entry, edit);
+                store.Save(null);
+                Check(File.ReadAllText(path).Contains("# Keep inline comment"), "edited entry retains inline comment");
+                File.WriteAllText(path, "matches: []\r\n");
+                store = load();
+                added = store.NewEntry();
+                added.Name = "EMPTY";
+                added.Replacement = "Text";
+                store.Upsert(null, added);
+                store.Save(null);
+                Check(File.ReadAllText(path).StartsWith("matches:\r\n"), "empty-list header becomes a real YAML list");
+                Check(Configuration.Read(path).Count == 4, "empty document accepts all new forms");
+                Check(TriggerEditorStore.Normalize("jñāna çakti") == "jñāna śakti", "mixed Unicode and legacy paste normalized");
+                Check(TriggerEditorStore.Normalize("ña", "unicode") == "ña" && TriggerEditorStore.Normalize("ña", "balaram") == "ṣa", "ambiguous input source remains controllable");
+            }
+            finally
+            {
+                File.WriteAllBytes(path, saved);
+            }
+
+            Console.WriteLine("PASS: " + passed + " FAIL: 0");
+            return 0;
+        }
+    }
+}

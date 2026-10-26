@@ -1,62 +1,494 @@
-using System;using System.Collections.Generic;
-namespace KeyJaya {public static class SelectionTests {
- static int passed,failed;static List<string> errors=new List<string>();
- static void Check(bool ok,string name){if(ok)passed++;else{failed++;if(errors.Count<40)errors.Add(name);}}
- sealed class Editor : ISelectionSurface {
-  public string Text,Expected;public int Start,End,OwnedStart,OwnedEnd,RangeDelay,KeyboardDelay,Tick,Pending=-1,KeyboardRequests,RangeRequests,Recoveries;public bool IgnoreRange,IgnoreKeyboard,KeyboardSupported=true,WrongRange,CollapseRange,CollapseKeyboard,Context=true;public Action OnWait;
-  public Editor(string prefix,string token,string suffix){Text=prefix+token+suffix;Expected=token;OwnedStart=prefix.Length;OwnedEnd=prefix.Length+token.Length;Start=End=OwnedEnd;}
-  public bool AtOwnedCaret(){int begin;return Start==OwnedEnd&&End==OwnedEnd&&EditGuard.Locate(Text,Start,End,Expected,out begin)&&begin==OwnedStart;}
-  public bool ExactSelection(){return Start==OwnedStart&&End==OwnedEnd&&Start>=0&&End<=Text.Length&&Text.Substring(Start,End-Start)==Expected;}
-  void Select(){Start=OwnedStart;End=OwnedEnd;Pending=-1;}
-  public void RequestSelection(){RangeRequests++;if(CollapseRange){Start=End=OwnedStart;return;}if(WrongRange){Start=OwnedStart==0?1:0;End=OwnedEnd;return;}if(IgnoreRange)return;if(RangeDelay==0)Select();else Pending=Tick+RangeDelay;}
-  public bool RestoreCaret(){if(!Context||Start<OwnedStart||End>OwnedEnd||Text.Substring(OwnedStart,OwnedEnd-OwnedStart)!=Expected)return false;Start=End=OwnedEnd;Pending=-1;Recoveries++;return true;}
-  public bool RequestKeyboardSelection(){KeyboardRequests++;if(CollapseKeyboard){Start=End=OwnedStart;return true;}if(!KeyboardSupported)return false;if(!IgnoreKeyboard){if(KeyboardDelay==0)Select();else Pending=Tick+KeyboardDelay;}return true;}
-  public void Wait(){Tick++;if(Pending>=0&&Tick>=Pending)Select();if(OnWait!=null)OnWait();}
-  public bool Replace(string output){if(!SelectionCommit.CanPaste(this,()=>Context))return false;Text=Text.Substring(0,Start)+output+Text.Substring(End);Start=End=Start+output.Length;return true;}
- }
- static void Run(Editor e,string output,bool success,string name){string original=e.Text;bool prepared=SelectionCommit.Prepare(e,()=>e.Context,e.Wait);bool replaced=prepared&&e.Replace(output);Check(replaced==success,name+" completion");Check(e.Text==(success?original.Substring(0,e.OwnedStart)+output+original.Substring(e.OwnedEnd):original),name+" exact document and no duplicate");Check(!e.Text.Contains(e.Expected+output),name+" no appended correction");}
- public static int Main(string[] args){
- Check(SelectionConversion.ValidText("rāja\nśakti\t१२"),"selected passage permits normal controls");foreach(string text in new[]{null,"","bad\0text",new string('a',200001)})Check(!SelectionConversion.ValidText(text),"invalid selected range rejected");Check(SelectionConversion.ValidText(new string('a',200000)),"selected range maximum accepted");
- Check(SelectionConversion.CanCommit(()=>true,()=>true),"exact selected range commits");Check(!SelectionConversion.CanCommit(()=>false,()=>true),"changed context cancels direct selection");Check(!SelectionConversion.CanCommit(()=>true,()=>false),"changed selection cancels conversion");int contextReads=0;Check(!SelectionConversion.CanCommit(()=>++contextReads==1,()=>true),"context rechecked after exact selection probe");
- foreach(uint sequence in new uint[]{0,1,42,uint.MaxValue}){Check(SelectionConversion.MayRestoreClipboard(sequence,sequence,true),"owned clipboard may restore");Check(!SelectionConversion.MayRestoreClipboard(sequence,unchecked(sequence+1),true),"new copy never overwritten");Check(!SelectionConversion.MayRestoreClipboard(sequence,sequence,false),"other clipboard owner never overwritten");}
- byte[] originalBytes={1,2,3};byte[] copiedBytes=(byte[])SelectionConversion.CloneClipboardValue(originalBytes);originalBytes[0]=9;Check(copiedBytes[0]==1,"binary clipboard format deeply copied");string[] files={"first.docx"};string[] copiedFiles=(string[])SelectionConversion.CloneClipboardValue(files);files[0]="changed.docx";Check(copiedFiles[0]=="first.docx","file-drop clipboard format copied");var stream=new System.IO.MemoryStream(new byte[]{4,5});var streamCopy=(System.IO.MemoryStream)SelectionConversion.CloneClipboardValue(stream);stream.WriteByte(8);Check(streamCopy.ToArray()[0]==4,"stream clipboard format copied");Check((string)SelectionConversion.CloneClipboardValue("original") == "original","text clipboard copied");foreach(object invalid in new object[]{null,new object()})try{SelectionConversion.CloneClipboardValue(invalid);Check(false,"unsupported format rejected");}catch(InvalidOperationException){Check(true,"unsupported format rejected");}
- ClipboardCycle preserved=new ClipboardCycle();IntPtr selectedOwner=new IntPtr(17);int[] selectedField={8};DateTime selectedNow=DateTime.UtcNow;preserved.Start("rāja",new[]{"rāja","rājā","raja"},"unicode","auto",71,selectedOwner,selectedField,selectedNow);preserved.Preserved("original clipboard",71);string selectedNext;Check(preserved.Next("unicode","auto","original clipboard",71,selectedOwner,selectedField,selectedNow,out selectedNext)&&selectedNext=="rājā","repeat selection conversion accepts preserved clipboard");preserved.Commit(selectedNext,71,selectedNow);preserved.Preserved("original clipboard",71);Check(preserved.Next("unicode","auto","original clipboard",71,selectedOwner,selectedField,selectedNow,out selectedNext)&&selectedNext=="raja","preserved clipboard repeats whole-word cycle");Check(!preserved.Next("unicode","auto","new copy",72,selectedOwner,selectedField,selectedNow,out selectedNext),"new copy resets selected-word cycle");
+// Noninteractive regressions: stale selection/focus/typing models and exact surrounding-text preservation.
+// Run: .\test.ps1 -Suite SelectionTests. Fixtures live under out/; no resident hooks are started.
+using System;
+using System.Collections.Generic;
 
- Check(SelectionCommit.OwnedRange(true,true,false,true,true,true,true,""),"Word zero-text equivalent end accepted");
- Check(SelectionCommit.OwnedRange(true,true,true,true,true,true,false,null),"exact endpoints unchanged");
- foreach(string gap in new[]{null," ","\r","\n","x","previous","\u200b"})Check(!SelectionCommit.OwnedRange(true,true,false,true,true,true,true,gap),"visible or unknown endpoint gap rejected");
- for(int mask=0;mask<64;mask++){bool expanded=(mask&1)!=0,start=(mask&2)!=0,text=(mask&4)!=0,range=(mask&8)!=0,boundary=(mask&16)!=0,word=(mask&32)!=0;Check(SelectionCommit.OwnedRange(expanded,start,false,text,range,boundary,word,"")==(mask==63),"all ownership checks required for Word equivalent end");}
- foreach(string typed in new[]{"ayurveda>","ayurveda<","hanuman>","brahmanas<","doesnt ","shouldnt ",":hello"}){string actual=char.ToUpperInvariant(typed[0])+typed.Substring(1);if(typed[0]==':')actual=":Hello";Check(EditGuard.CaseEquivalent(typed,actual),"Word automatic capitalization accepted");string prefix="earlier "+actual+" stays untouched. ",suffix=" later stays";string document=prefix+actual+suffix;int caret=prefix.Length+actual.Length,begin;Check(EditGuard.Locate(document,caret,caret,actual,out begin)&&begin==prefix.Length,"case-adapted token remains exactly bounded");Check(!EditGuard.CaseEquivalent(typed,actual+"x"),"capitalization cannot expand range");Check(!EditGuard.CaseEquivalent(typed,actual.Replace('a','e'))||typed.IndexOf('a')<0,"different letters cannot be accepted as casing");Check(!EditGuard.CaseEquivalent(typed,"old "+actual),"capitalization cannot consume preceding words");}
- foreach(string actual in new[]{"Āyurveda>","ayur veda>","ayurveda<","ayurveda>>","ayurvedā>"})Check(!EditGuard.CaseEquivalent("ayurveda>",actual),"case-only guard rejects non-case modification");
- foreach(string token in new[]{"didnt ","doesnt ","doesn’t ","dont ","cant "})foreach(string prefix in new[]{"","it ","earlier doesnt stays. ","😀 earlier\r\n"})foreach(string suffix in new[]{"","later didnt stays"}){
-  Editor e=new Editor(prefix,token,suffix){CollapseRange=true};string before=e.Text;
-  Check(!SelectionCommit.Prepare(e,()=>e.Context,e.Wait),"collapsed UIA abort");Check(e.Start==e.OwnedEnd&&e.End==e.OwnedEnd&&e.Text==before,"collapsed UIA restores caret without modifying text");
-  e=new Editor(prefix,token,suffix){CollapseRange=true};Check(SelectionCommit.Prepare(e,()=>e.Context,e.Wait,true)&&e.RangeRequests==0&&e.KeyboardRequests==1,"keyboard-first skips broken UIA Select");Check(e.Replace("didn’t ")&&e.Text==prefix+"didn’t "+suffix,"keyboard-first replaces exact word only");
-  e=new Editor(prefix,token,suffix){CollapseKeyboard=true};Check(!SelectionCommit.Prepare(e,()=>e.Context,e.Wait,true)&&e.Start==e.OwnedEnd&&e.End==e.OwnedEnd,"failed keyboard request restores caret");
-  e=new Editor(prefix,token,suffix){CollapseKeyboard=true};Editor stale=e;e.OnWait=()=>stale.Context=false;Check(!SelectionCommit.Prepare(e,()=>e.Context,e.Wait,true)&&e.Recoveries==0,"stale context never moves caret during recovery");
- }
- Editor untouchedSelection=new Editor("it ","didnt ","later");untouchedSelection.Start=untouchedSelection.OwnedStart;Check(!SelectionCommit.Prepare(untouchedSelection,()=>untouchedSelection.Context,untouchedSelection.Wait)&&untouchedSelection.Start==untouchedSelection.OwnedStart&&untouchedSelection.End==untouchedSelection.OwnedEnd&&untouchedSelection.Recoveries==0,"initial user selection is never changed by cancellation");
- CorrectionQueue queue=new CorrectionQueue();string pending;IntPtr field=new IntPtr(123);
- queue.Set("didnt ",field,10);queue.Set("doesnt ",field,20);Check(queue.Take(20,field,false,out pending)&&pending=="doesnt ","busy worker retains only latest completed word");Check(!queue.Take(20,field,false,out pending),"queued correction consumed once");
- queue.Set("didnt ",field,30);Check(!queue.Take(31,field,false,out pending),"subsequent typing cancels queued earlier word");
- queue.Set("didnt ",field,30);Check(!queue.Take(30,new IntPtr(124),false,out pending),"focus change cancels queue");
- queue.Set("didnt ",field,30);Check(!queue.Take(30,field,true,out pending),"pause cancels queue");
- Editor aborted=new Editor("it ","didnt ","later");string saved=aborted.Text;Check(SelectionCommit.Prepare(aborted,()=>aborted.Context,aborted.Wait,true),"prepare before paste abort");Check(aborted.RestoreCaret()&&aborted.Start==aborted.OwnedEnd&&aborted.End==aborted.OwnedEnd&&aborted.Text==saved,"paste abort restores caret and preserves surrounding text");
- string[] raw={"doesnt ","dont ","cant ","isnt ","wouldnt ","shouldnt ","didnt ","wasnt ","werent ","hasnt ","havent ","couldnt "};
- string[] converted={"doesn’t ","don’t ","can’t ","isn’t ","wouldn’t ","shouldn’t ","didn’t ","wasn’t ","weren’t ","hasn’t ","haven’t ","couldn’t "};
- for(int repetition=0;repetition<100;repetition++)for(int i=0;i<raw.Length;i++)foreach(string prefix in new[]{"it ","Earlier doesnt is deliberately unchanged. ","😀 earlier\r\n",new string('x',180)+" ",""})foreach(string suffix in new[]{"","later doesnt must stay exact","\r\nolder typo isnt"}){
-  string tag=repetition+" "+i+" "+prefix.Length+" "+suffix.Length;
-  Editor e=new Editor(prefix,raw[i],suffix);Run(e,converted[i],true,"Word synchronous selection "+tag);Check(e.KeyboardRequests==0,"working UIA never uses fallback "+tag);
-  e=new Editor(prefix,raw[i],suffix){IgnoreRange=true};Run(e,converted[i],true,"ignored UIA with keyboard fallback "+tag);Check(e.KeyboardRequests==1,"bounded fallback once "+tag);
-  e=new Editor(prefix,raw[i],suffix){RangeDelay=2};Run(e,converted[i],true,"asynchronous UIA "+tag);Check(e.KeyboardRequests==0,"delayed UIA avoids fallback "+tag);
-  e=new Editor(prefix,raw[i],suffix){IgnoreRange=true,KeyboardDelay=2};Run(e,converted[i],true,"asynchronous keyboard selection "+tag);
-  e=new Editor(prefix,raw[i],suffix){IgnoreRange=true,IgnoreKeyboard=true};Run(e,converted[i],false,"both requests ignored "+tag);Check(e.Tick<=13,"retry bound "+tag);
-  e=new Editor(prefix,raw[i],suffix){IgnoreRange=true,KeyboardSupported=false};Run(e,converted[i],false,"unsupported selection "+tag);
-  e=new Editor(prefix,raw[i],suffix){WrongRange=true};Run(e,converted[i],false,"wrong selection includes preceding words "+tag);Check(e.KeyboardRequests==0,"wrong selection cannot fallback "+tag);
-  e=new Editor(prefix,raw[i],suffix){IgnoreRange=true};Editor race=e;e.OnWait=()=>race.Context=false;Run(e,converted[i],false,"typing focus or pause cancels "+tag);
-  e=new Editor(prefix,raw[i],suffix);Check(SelectionCommit.Prepare(e,()=>e.Context,e.Wait),"prepare before collapsed-selection race "+tag);e.Start=e.End=e.OwnedEnd;Check(!e.Replace(converted[i])&&e.Text==prefix+raw[i]+suffix,"selection lost just before paste never appends "+tag);
-  e=new Editor(prefix,raw[i],suffix);Check(SelectionCommit.Prepare(e,()=>e.Context,e.Wait),"prepare before focus race "+tag);e.Context=false;Check(!e.Replace(converted[i])&&e.Text==prefix+raw[i]+suffix,"focus lost just before paste "+tag);
- }
- foreach(string bad in new[]{"rāja ","😀 ","a\u0304 ",new string('a',161),"doesnt\n","doesnt\t",null,""})Check(SelectionCommit.KeyboardCount(bad)==0,"unsafe keyboard count rejected");Check(SelectionCommit.KeyboardCount("doesnt ")==7,"reported contraction count includes only its space");Check(SelectionCommit.KeyboardCount(new string('a',160))==160,"keyboard count bound");
- Console.WriteLine("Selection fixtures: ignored/asynchronous UIA, ignored/asynchronous keyboard selection, stale focus/typing, lost selection before paste, and exact surrounding text.");Console.WriteLine("PASS: "+passed+" FAIL: "+failed);foreach(string error in errors)Console.WriteLine("FAIL "+error);return failed==0?0:1;
-}}}
+namespace KeyJaya
+{
+    public static class SelectionTests
+    {
+        static int passed, failed;
+        static List<string> errors = new List<string>();
+        static void Check(bool ok, string name)
+        {
+            if (ok)
+                passed++;
+            else
+            {
+                failed++;
+                if (errors.Count < 40)
+                    errors.Add(name);
+            }
+        }
+
+        sealed class Editor : ISelectionSurface
+        {
+            public string Text, Expected;
+            public int Start, End, OwnedStart, OwnedEnd, RangeDelay, KeyboardDelay, Tick, Pending = -1, KeyboardRequests, RangeRequests, Recoveries;
+            public bool IgnoreRange, IgnoreKeyboard, KeyboardSupported = true, WrongRange, CollapseRange, CollapseKeyboard, Context = true;
+            public Action OnWait;
+            public Editor(string prefix, string token, string suffix)
+            {
+                Text = prefix + token + suffix;
+                Expected = token;
+                OwnedStart = prefix.Length;
+                OwnedEnd = prefix.Length + token.Length;
+                Start = End = OwnedEnd;
+            }
+
+            public bool AtOwnedCaret()
+            {
+                int begin;
+                return Start == OwnedEnd && End == OwnedEnd && EditGuard.Locate(Text, Start, End, Expected, out begin) && begin == OwnedStart;
+            }
+
+            public bool ExactSelection()
+            {
+                return Start == OwnedStart && End == OwnedEnd && Start >= 0 && End <= Text.Length && Text.Substring(Start, End - Start) == Expected;
+            }
+
+            void Select()
+            {
+                Start = OwnedStart;
+                End = OwnedEnd;
+                Pending = -1;
+            }
+
+            public void RequestSelection()
+            {
+                RangeRequests++;
+                if (CollapseRange)
+                {
+                    Start = End = OwnedStart;
+                    return;
+                }
+
+                if (WrongRange)
+                {
+                    Start = OwnedStart == 0 ? 1 : 0;
+                    End = OwnedEnd;
+                    return;
+                }
+
+                if (IgnoreRange)
+                    return;
+                if (RangeDelay == 0)
+                    Select();
+                else
+                    Pending = Tick + RangeDelay;
+            }
+
+            public bool RestoreCaret()
+            {
+                if (!Context || Start < OwnedStart || End > OwnedEnd || Text.Substring(OwnedStart, OwnedEnd - OwnedStart) != Expected)
+                    return false;
+                Start = End = OwnedEnd;
+                Pending = -1;
+                Recoveries++;
+                return true;
+            }
+
+            public bool RequestKeyboardSelection()
+            {
+                KeyboardRequests++;
+                if (CollapseKeyboard)
+                {
+                    Start = End = OwnedStart;
+                    return true;
+                }
+
+                if (!KeyboardSupported)
+                    return false;
+                if (!IgnoreKeyboard)
+                {
+                    if (KeyboardDelay == 0)
+                        Select();
+                    else
+                        Pending = Tick + KeyboardDelay;
+                }
+
+                return true;
+            }
+
+            public void Wait()
+            {
+                Tick++;
+                if (Pending >= 0 && Tick >= Pending)
+                    Select();
+                if (OnWait != null)
+                    OnWait();
+            }
+
+            public bool Replace(string output)
+            {
+                if (!SelectionCommit.CanPaste(this, () => Context))
+                    return false;
+                Text = Text.Substring(0, Start) + output + Text.Substring(End);
+                Start = End = Start + output.Length;
+                return true;
+            }
+        }
+
+        static void Run(Editor e, string output, bool success, string name)
+        {
+            string original = e.Text;
+            bool prepared = SelectionCommit.Prepare(e, () => e.Context, e.Wait);
+            bool replaced = prepared && e.Replace(output);
+            Check(replaced == success, name + " completion");
+            Check(e.Text == (success ? original.Substring(0, e.OwnedStart) + output + original.Substring(e.OwnedEnd) : original), name + " exact document and no duplicate");
+            Check(!e.Text.Contains(e.Expected + output), name + " no appended correction");
+        }
+
+        public static int Main(string[] args)
+        {
+            Check(SelectionConversion.ValidText("rāja\nśakti\t१२"), "selected passage permits normal controls");
+            foreach (string text in new[]
+            {
+                null,
+                "",
+                "bad\0text",
+                new string ('a', 200001)
+            }
+
+            )
+                Check(!SelectionConversion.ValidText(text), "invalid selected range rejected");
+            Check(SelectionConversion.ValidText(new string ('a', 200000)), "selected range maximum accepted");
+            Check(SelectionConversion.CanCommit(() => true, () => true), "exact selected range commits");
+            Check(!SelectionConversion.CanCommit(() => false, () => true), "changed context cancels direct selection");
+            Check(!SelectionConversion.CanCommit(() => true, () => false), "changed selection cancels conversion");
+            int contextReads = 0;
+            Check(!SelectionConversion.CanCommit(() => ++contextReads == 1, () => true), "context rechecked after exact selection probe");
+            foreach (uint sequence in new uint[]
+            {
+                0,
+                1,
+                42,
+                uint.MaxValue
+            }
+
+            )
+            {
+                Check(SelectionConversion.MayRestoreClipboard(sequence, sequence, true), "owned clipboard may restore");
+                Check(!SelectionConversion.MayRestoreClipboard(sequence, unchecked(sequence + 1), true), "new copy never overwritten");
+                Check(!SelectionConversion.MayRestoreClipboard(sequence, sequence, false), "other clipboard owner never overwritten");
+            }
+
+            byte[] originalBytes =
+            {
+                1,
+                2,
+                3
+            };
+            byte[] copiedBytes = (byte[])SelectionConversion.CloneClipboardValue(originalBytes);
+            originalBytes[0] = 9;
+            Check(copiedBytes[0] == 1, "binary clipboard format deeply copied");
+            string[] files =
+            {
+                "first.docx"
+            };
+            string[] copiedFiles = (string[])SelectionConversion.CloneClipboardValue(files);
+            files[0] = "changed.docx";
+            Check(copiedFiles[0] == "first.docx", "file-drop clipboard format copied");
+            var stream = new System.IO.MemoryStream(new byte[] { 4, 5 });
+            var streamCopy = (System.IO.MemoryStream)SelectionConversion.CloneClipboardValue(stream);
+            stream.WriteByte(8);
+            Check(streamCopy.ToArray()[0] == 4, "stream clipboard format copied");
+            Check((string)SelectionConversion.CloneClipboardValue("original") == "original", "text clipboard copied");
+            foreach (object invalid in new object[]
+            {
+                null,
+                new object ()
+            }
+
+            )
+                try
+                {
+                    SelectionConversion.CloneClipboardValue(invalid);
+                    Check(false, "unsupported format rejected");
+                }
+                catch (InvalidOperationException)
+                {
+                    Check(true, "unsupported format rejected");
+                }
+
+            ClipboardCycle preserved = new ClipboardCycle();
+            IntPtr selectedOwner = new IntPtr(17);
+            int[] selectedField =
+            {
+                8
+            };
+            DateTime selectedNow = DateTime.UtcNow;
+            preserved.Start("rāja", new[] { "rāja", "rājā", "raja" }, "unicode", "auto", 71, selectedOwner, selectedField, selectedNow);
+            preserved.Preserved("original clipboard", 71);
+            string selectedNext;
+            Check(preserved.Next("unicode", "auto", "original clipboard", 71, selectedOwner, selectedField, selectedNow, out selectedNext) && selectedNext == "rājā", "repeat selection conversion accepts preserved clipboard");
+            preserved.Commit(selectedNext, 71, selectedNow);
+            preserved.Preserved("original clipboard", 71);
+            Check(preserved.Next("unicode", "auto", "original clipboard", 71, selectedOwner, selectedField, selectedNow, out selectedNext) && selectedNext == "raja", "preserved clipboard repeats whole-word cycle");
+            Check(!preserved.Next("unicode", "auto", "new copy", 72, selectedOwner, selectedField, selectedNow, out selectedNext), "new copy resets selected-word cycle");
+            Check(SelectionCommit.OwnedRange(true, true, false, true, true, true, true, ""), "Word zero-text equivalent end accepted");
+            Check(SelectionCommit.OwnedRange(true, true, true, true, true, true, false, null), "exact endpoints unchanged");
+            foreach (string gap in new[]
+            {
+                null,
+                " ",
+                "\r",
+                "\n",
+                "x",
+                "previous",
+                "\u200b"
+            }
+
+            )
+                Check(!SelectionCommit.OwnedRange(true, true, false, true, true, true, true, gap), "visible or unknown endpoint gap rejected");
+            for (int mask = 0; mask < 64; mask++)
+            {
+                bool expanded = (mask & 1) != 0, start = (mask & 2) != 0, text = (mask & 4) != 0, range = (mask & 8) != 0, boundary = (mask & 16) != 0, word = (mask & 32) != 0;
+                Check(SelectionCommit.OwnedRange(expanded, start, false, text, range, boundary, word, "") == (mask == 63), "all ownership checks required for Word equivalent end");
+            }
+
+            foreach (string typed in new[]
+            {
+                "ayurveda>",
+                "ayurveda<",
+                "hanuman>",
+                "brahmanas<",
+                "doesnt ",
+                "shouldnt ",
+                ":hello"
+            }
+
+            )
+            {
+                string actual = char.ToUpperInvariant(typed[0]) + typed.Substring(1);
+                if (typed[0] == ':')
+                    actual = ":Hello";
+                Check(EditGuard.CaseEquivalent(typed, actual), "Word automatic capitalization accepted");
+                string prefix = "earlier " + actual + " stays untouched. ", suffix = " later stays";
+                string document = prefix + actual + suffix;
+                int caret = prefix.Length + actual.Length, begin;
+                Check(EditGuard.Locate(document, caret, caret, actual, out begin) && begin == prefix.Length, "case-adapted token remains exactly bounded");
+                Check(!EditGuard.CaseEquivalent(typed, actual + "x"), "capitalization cannot expand range");
+                Check(!EditGuard.CaseEquivalent(typed, actual.Replace('a', 'e')) || typed.IndexOf('a') < 0, "different letters cannot be accepted as casing");
+                Check(!EditGuard.CaseEquivalent(typed, "old " + actual), "capitalization cannot consume preceding words");
+            }
+
+            foreach (string actual in new[]
+            {
+                "Āyurveda>",
+                "ayur veda>",
+                "ayurveda<",
+                "ayurveda>>",
+                "ayurvedā>"
+            }
+
+            )
+                Check(!EditGuard.CaseEquivalent("ayurveda>", actual), "case-only guard rejects non-case modification");
+            foreach (string token in new[]
+            {
+                "didnt ",
+                "doesnt ",
+                "doesn’t ",
+                "dont ",
+                "cant "
+            }
+
+            )
+                foreach (string prefix in new[]
+                {
+                    "",
+                    "it ",
+                    "earlier doesnt stays. ",
+                    "😀 earlier\r\n"
+                }
+
+                )
+                    foreach (string suffix in new[]
+                    {
+                        "",
+                        "later didnt stays"
+                    }
+
+                    )
+                    {
+                        Editor e = new Editor(prefix, token, suffix)
+                        {
+                            CollapseRange = true
+                        };
+                        string before = e.Text;
+                        Check(!SelectionCommit.Prepare(e, () => e.Context, e.Wait), "collapsed UIA abort");
+                        Check(e.Start == e.OwnedEnd && e.End == e.OwnedEnd && e.Text == before, "collapsed UIA restores caret without modifying text");
+                        e = new Editor(prefix, token, suffix)
+                        {
+                            CollapseRange = true
+                        };
+                        Check(SelectionCommit.Prepare(e, () => e.Context, e.Wait, true) && e.RangeRequests == 0 && e.KeyboardRequests == 1, "keyboard-first skips broken UIA Select");
+                        Check(e.Replace("didn’t ") && e.Text == prefix + "didn’t " + suffix, "keyboard-first replaces exact word only");
+                        e = new Editor(prefix, token, suffix)
+                        {
+                            CollapseKeyboard = true
+                        };
+                        Check(!SelectionCommit.Prepare(e, () => e.Context, e.Wait, true) && e.Start == e.OwnedEnd && e.End == e.OwnedEnd, "failed keyboard request restores caret");
+                        e = new Editor(prefix, token, suffix)
+                        {
+                            CollapseKeyboard = true
+                        };
+                        Editor stale = e;
+                        e.OnWait = () => stale.Context = false;
+                        Check(!SelectionCommit.Prepare(e, () => e.Context, e.Wait, true) && e.Recoveries == 0, "stale context never moves caret during recovery");
+                    }
+
+            Editor untouchedSelection = new Editor("it ", "didnt ", "later");
+            untouchedSelection.Start = untouchedSelection.OwnedStart;
+            Check(!SelectionCommit.Prepare(untouchedSelection, () => untouchedSelection.Context, untouchedSelection.Wait) && untouchedSelection.Start == untouchedSelection.OwnedStart && untouchedSelection.End == untouchedSelection.OwnedEnd && untouchedSelection.Recoveries == 0, "initial user selection is never changed by cancellation");
+            CorrectionQueue queue = new CorrectionQueue();
+            string pending;
+            IntPtr field = new IntPtr(123);
+            queue.Set("didnt ", field, 10);
+            queue.Set("doesnt ", field, 20);
+            Check(queue.Take(20, field, false, out pending) && pending == "doesnt ", "busy worker retains only latest completed word");
+            Check(!queue.Take(20, field, false, out pending), "queued correction consumed once");
+            queue.Set("didnt ", field, 30);
+            Check(!queue.Take(31, field, false, out pending), "subsequent typing cancels queued earlier word");
+            queue.Set("didnt ", field, 30);
+            Check(!queue.Take(30, new IntPtr(124), false, out pending), "focus change cancels queue");
+            queue.Set("didnt ", field, 30);
+            Check(!queue.Take(30, field, true, out pending), "pause cancels queue");
+            Editor aborted = new Editor("it ", "didnt ", "later");
+            string saved = aborted.Text;
+            Check(SelectionCommit.Prepare(aborted, () => aborted.Context, aborted.Wait, true), "prepare before paste abort");
+            Check(aborted.RestoreCaret() && aborted.Start == aborted.OwnedEnd && aborted.End == aborted.OwnedEnd && aborted.Text == saved, "paste abort restores caret and preserves surrounding text");
+            string[] raw =
+            {
+                "doesnt ",
+                "dont ",
+                "cant ",
+                "isnt ",
+                "wouldnt ",
+                "shouldnt ",
+                "didnt ",
+                "wasnt ",
+                "werent ",
+                "hasnt ",
+                "havent ",
+                "couldnt "
+            };
+            string[] converted =
+            {
+                "doesn’t ",
+                "don’t ",
+                "can’t ",
+                "isn’t ",
+                "wouldn’t ",
+                "shouldn’t ",
+                "didn’t ",
+                "wasn’t ",
+                "weren’t ",
+                "hasn’t ",
+                "haven’t ",
+                "couldn’t "
+            };
+            for (int repetition = 0; repetition < 100; repetition++)
+                for (int i = 0; i < raw.Length; i++)
+                    foreach (string prefix in new[]
+                    {
+                        "it ",
+                        "Earlier doesnt is deliberately unchanged. ",
+                        "😀 earlier\r\n",
+                        new string ('x', 180) + " ",
+                        ""
+                    }
+
+                    )
+                        foreach (string suffix in new[]
+                        {
+                            "",
+                            "later doesnt must stay exact",
+                            "\r\nolder typo isnt"
+                        }
+
+                        )
+                        {
+                            string tag = repetition + " " + i + " " + prefix.Length + " " + suffix.Length;
+                            Editor e = new Editor(prefix, raw[i], suffix);
+                            Run(e, converted[i], true, "Word synchronous selection " + tag);
+                            Check(e.KeyboardRequests == 0, "working UIA never uses fallback " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                IgnoreRange = true
+                            };
+                            Run(e, converted[i], true, "ignored UIA with keyboard fallback " + tag);
+                            Check(e.KeyboardRequests == 1, "bounded fallback once " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                RangeDelay = 2
+                            };
+                            Run(e, converted[i], true, "asynchronous UIA " + tag);
+                            Check(e.KeyboardRequests == 0, "delayed UIA avoids fallback " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                IgnoreRange = true,
+                                KeyboardDelay = 2
+                            };
+                            Run(e, converted[i], true, "asynchronous keyboard selection " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                IgnoreRange = true,
+                                IgnoreKeyboard = true
+                            };
+                            Run(e, converted[i], false, "both requests ignored " + tag);
+                            Check(e.Tick <= 13, "retry bound " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                IgnoreRange = true,
+                                KeyboardSupported = false
+                            };
+                            Run(e, converted[i], false, "unsupported selection " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                WrongRange = true
+                            };
+                            Run(e, converted[i], false, "wrong selection includes preceding words " + tag);
+                            Check(e.KeyboardRequests == 0, "wrong selection cannot fallback " + tag);
+                            e = new Editor(prefix, raw[i], suffix)
+                            {
+                                IgnoreRange = true
+                            };
+                            Editor race = e;
+                            e.OnWait = () => race.Context = false;
+                            Run(e, converted[i], false, "typing focus or pause cancels " + tag);
+                            e = new Editor(prefix, raw[i], suffix);
+                            Check(SelectionCommit.Prepare(e, () => e.Context, e.Wait), "prepare before collapsed-selection race " + tag);
+                            e.Start = e.End = e.OwnedEnd;
+                            Check(!e.Replace(converted[i]) && e.Text == prefix + raw[i] + suffix, "selection lost just before paste never appends " + tag);
+                            e = new Editor(prefix, raw[i], suffix);
+                            Check(SelectionCommit.Prepare(e, () => e.Context, e.Wait), "prepare before focus race " + tag);
+                            e.Context = false;
+                            Check(!e.Replace(converted[i]) && e.Text == prefix + raw[i] + suffix, "focus lost just before paste " + tag);
+                        }
+
+            foreach (string bad in new[]
+            {
+                "rāja ",
+                "😀 ",
+                "a\u0304 ",
+                new string ('a', 161),
+                "doesnt\n",
+                "doesnt\t",
+                null,
+                ""
+            }
+
+            )
+                Check(SelectionCommit.KeyboardCount(bad) == 0, "unsafe keyboard count rejected");
+            Check(SelectionCommit.KeyboardCount("doesnt ") == 7, "reported contraction count includes only its space");
+            Check(SelectionCommit.KeyboardCount(new string ('a', 160)) == 160, "keyboard count bound");
+            passed += EditorContracts.Run(args[0], args[1]);
+            Console.WriteLine("Selection fixtures: ignored/asynchronous UIA, ignored/asynchronous keyboard selection, stale focus/typing, lost selection before paste, and exact surrounding text.");
+            Console.WriteLine("PASS: " + passed + " FAIL: " + failed);
+            foreach (string error in errors)
+                Console.WriteLine("FAIL " + error);
+            return failed == 0 ? 0 : 1;
+        }
+    }
+}

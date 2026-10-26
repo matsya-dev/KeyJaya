@@ -1,14 +1,224 @@
-﻿using System;using System.IO;using System.Linq;using System.Text;using System.Collections.Generic;
-namespace KeyJaya {public static class SelectionRefinementTests {
- static int passed,failed;static void Check(bool ok,string name){if(ok)passed++;else{failed++;Console.WriteLine("FAIL "+name);}}static void Equal(string want,string got,string name){Check(want==got,name+" want="+want+" got="+got);}
- static void Patches(string input,string output){var plan=SelectionFormatting.Plan(input,output);Equal(output,SelectionFormatting.Apply(input,plan),"patch output");Check(plan!=null&&plan.All(p=>p.Length<=1||p.After.Length==0),"per-character formatting edits");string prefix="Earlier untouched ",tail=" unchanged later.";var shifted=plan.Select(p=>new TextPatch(prefix.Length+p.Offset,p.Before,p.After)).ToArray();Equal(prefix+output+tail,SelectionFormatting.Apply(prefix+input+tail,shifted),"outside selection unchanged");var reverse=SelectionFormatting.Plan(output,input);Equal(input,SelectionFormatting.Apply(output,reverse),"complete one-action original snapshot");}
- public static int Main(string[] args){foreach(var pair in new[]{new[]{"Earlier raja and Krsna!","Earlier rāja and Kṛṣṇa!"},new[]{"krishna","kṛṣṇa"},new[]{"aapka","आपका"},new[]{"kṛṣṇa","কৃষ্ণ"},new[]{"ṛ","Ri"},new[]{"A\r\nraja\tācāryas","A\r\nrājā\tacaryas"},new[]{"old text", "new text goes here"},new[]{"abc",""},new[]{"","abc"}})Patches(pair[0],pair[1]);var random=new Random(771);string alphabet="abāṛśṣकখ \n";for(int n=0;n<5000;n++){string a=new string(Enumerable.Range(0,random.Next(30)).Select(x=>alphabet[random.Next(alphabet.Length)]).ToArray());string b=new string(Enumerable.Range(0,random.Next(30)).Select(x=>alphabet[random.Next(alphabet.Length)]).ToArray());Patches(a,b);}
- string text="raja";int[] styles={1,2,3,4};foreach(var patch in SelectionFormatting.Plan(text,"rāja")){int style=styles[patch.Offset];text=text.Remove(patch.Offset,patch.Length).Insert(patch.Offset,patch.After);styles=styles.Take(patch.Offset).Concat(Enumerable.Repeat(style,patch.After.Length)).Concat(styles.Skip(patch.Offset+patch.Length)).ToArray();}Equal("rāja",text,"formatted text");Check(styles.SequenceEqual(new[]{1,2,3,4}),"bold italic font size and family identifiers retained per letter");Check(SelectionFormatting.Plan(new string('x',1100),new string('y',1200))==null,"bounded expensive diff declined");
- var cycle=new ClipboardCycle();var now=DateTime.UtcNow;int[] field={1,2};IntPtr owner=new IntPtr(50);cycle.Start("rāja",new[]{"rāja","rājā","raja"},"unicode","auto",17,owner,field,now);cycle.Preserved("untouched clipboard",17);string next;Check(cycle.NextSelected("unicode","auto","rāja",17,owner,field,now,out next)&&next=="rājā","reselected conversion cycles with preserved clipboard");Check(!cycle.NextSelected("unicode","auto","other",17,owner,field,now,out next),"changed selected text never cycles old text");
- string root=Path.Combine(Path.GetDirectoryName(typeof(SelectionRefinementTests).Assembly.Location),"selection-refinement-artifacts",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(Path.Combine(root,"data"));Directory.CreateDirectory(Configuration.Folder(root));foreach(string file in Directory.GetFiles(Path.Combine(args[0],"data")))File.Copy(file,Path.Combine(root,"data",Path.GetFileName(file)));Configuration.Write(Configuration.Short(root),new Dictionary<string,string>());string overrides=Path.Combine(Configuration.Folder(root),"word-spellings.tsv");File.WriteAllText(overrides,"raja\trājā\nage\t!keep\nteh\t!keep\nKrsna\t!keep\n",new UTF8Encoding(false));
- using(Core c=new Core(root)){Equal("rājā",c.Word("raja","unicode"),"preferred ambiguous spelling");Equal("Rājā",c.Word("Raja","unicode"),"preferred case");Equal("räjä",c.ConvertHighlighted("raja","balaram"),"preferred highlight cycle");foreach(string mode in new[]{"unicode","balaram","plain","itrans","devanagari","bengali"}){Equal("age Krsna",c.ConvertCopied("age Krsna",mode),"never convert all explicit outputs "+mode);Check(c.CaretChoices("Krsna",mode).Length==0,"never cycle "+mode);Equal(null,c.Trigger("Krsna>"),"never trigger "+mode);}Equal(null,c.CorrectCompletedWord("teh "),"never autocorrect");Equal("Krsna",c.ConvertItrans("Krsna","unicode"),"never ITRANS tool");Equal("Krsna",c.ConvertBalaram("Krsna","unicode"),"never Balaram tool");Equal("Krsna’s",c.ConvertCopied("Krsna’s","unicode"),"never possessive");Equal("Earlier age, rājā and Krsna!",c.ConvertHighlighted("Earlier age, raja and Krsna!","unicode"),"preferred mixed passage");File.WriteAllText(overrides,"age\t!keep\nAGE\tāge\n");try{using(Core bad=Core.Reload(c,root)){}Check(false,"duplicate config refused");}catch(InvalidDataException){Check(true,"duplicate config refused");}Equal("rājā",c.Word("raja","unicode"),"failed reload leaves current configuration");}
- File.WriteAllText(overrides,"raja\t!keep\n",new UTF8Encoding(false));File.WriteAllText(Path.Combine(Configuration.Folder(root),"conversion-rules.tsv"),"raja\trājā\n",new UTF8Encoding(false));using(Core c=new Core(root)){Equal("raja",c.Convert("raja","unicode"),"never overrides broad text rules");Equal("raja",c.ConvertCopied("raja","unicode"),"never copied broad text rules");}
- foreach(string bad in new[]{"two words\trāja", "raja\t", "raja\t!wat", "raja\trāja\textra"}){File.WriteAllText(overrides,bad+"\n");try{using(Core invalid=new Core(root)){}Check(false,"invalid override refused");}catch(InvalidDataException){Check(true,"invalid override refused");}}
- Console.WriteLine("PASS: "+passed+" FAIL: "+failed);return failed==0?0:1;
-}}
+// Noninteractive regressions: selection patches, formatting preservation, and protected/preferred words.
+// Run: .\test.ps1 -Suite SelectionRefinementTests. Fixtures live under out/; no resident hooks are started.
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Collections.Generic;
+
+namespace KeyJaya
+{
+    public static class SelectionRefinementTests
+    {
+        static int passed, failed;
+        static void Check(bool ok, string name)
+        {
+            if (ok)
+                passed++;
+            else
+            {
+                failed++;
+                Console.WriteLine("FAIL " + name);
+            }
+        }
+
+        static void Equal(string want, string got, string name)
+        {
+            Check(want == got, name + " want=" + want + " got=" + got);
+        }
+
+        static void Patches(string input, string output)
+        {
+            var plan = SelectionFormatting.Plan(input, output);
+            Equal(output, SelectionFormatting.Apply(input, plan), "patch output");
+            Check(plan != null && plan.All(p => p.Length <= 1 || p.After.Length == 0), "per-character formatting edits");
+            string prefix = "Earlier untouched ", tail = " unchanged later.";
+            var shifted = plan.Select(p => new TextPatch(prefix.Length + p.Offset, p.Before, p.After)).ToArray();
+            Equal(prefix + output + tail, SelectionFormatting.Apply(prefix + input + tail, shifted), "outside selection unchanged");
+            var reverse = SelectionFormatting.Plan(output, input);
+            Equal(input, SelectionFormatting.Apply(output, reverse), "complete one-action original snapshot");
+        }
+
+        public static int Main(string[] args)
+        {
+            foreach (var pair in new[]
+            {
+                new[]
+                {
+                    "Earlier raja and Krsna!",
+                    "Earlier rāja and Kṛṣṇa!"
+                },
+                new[]
+                {
+                    "krishna",
+                    "kṛṣṇa"
+                },
+                new[]
+                {
+                    "aapka",
+                    "आपका"
+                },
+                new[]
+                {
+                    "kṛṣṇa",
+                    "কৃষ্ণ"
+                },
+                new[]
+                {
+                    "ṛ",
+                    "Ri"
+                },
+                new[]
+                {
+                    "A\r\nraja\tācāryas",
+                    "A\r\nrājā\tacaryas"
+                },
+                new[]
+                {
+                    "old text",
+                    "new text goes here"
+                },
+                new[]
+                {
+                    "abc",
+                    ""
+                },
+                new[]
+                {
+                    "",
+                    "abc"
+                }
+            }
+
+            )
+                Patches(pair[0], pair[1]);
+            var random = new Random(771);
+            string alphabet = "abāṛśṣकখ \n";
+            for (int n = 0; n < 5000; n++)
+            {
+                string a = new string (Enumerable.Range(0, random.Next(30)).Select(x => alphabet[random.Next(alphabet.Length)]).ToArray());
+                string b = new string (Enumerable.Range(0, random.Next(30)).Select(x => alphabet[random.Next(alphabet.Length)]).ToArray());
+                Patches(a, b);
+            }
+
+            string text = "raja";
+            int[] styles =
+            {
+                1,
+                2,
+                3,
+                4
+            };
+            foreach (var patch in SelectionFormatting.Plan(text, "rāja"))
+            {
+                int style = styles[patch.Offset];
+                text = text.Remove(patch.Offset, patch.Length).Insert(patch.Offset, patch.After);
+                styles = styles.Take(patch.Offset).Concat(Enumerable.Repeat(style, patch.After.Length)).Concat(styles.Skip(patch.Offset + patch.Length)).ToArray();
+            }
+
+            Equal("rāja", text, "formatted text");
+            Check(styles.SequenceEqual(new[] { 1, 2, 3, 4 }), "bold italic font size and family identifiers retained per letter");
+            Check(SelectionFormatting.Plan(new string ('x', 1100), new string ('y', 1200)) == null, "bounded expensive diff declined");
+            var cycle = new ClipboardCycle();
+            var now = DateTime.UtcNow;
+            int[] field =
+            {
+                1,
+                2
+            };
+            IntPtr owner = new IntPtr(50);
+            cycle.Start("rāja", new[] { "rāja", "rājā", "raja" }, "unicode", "auto", 17, owner, field, now);
+            cycle.Preserved("untouched clipboard", 17);
+            string next;
+            Check(cycle.NextSelected("unicode", "auto", "rāja", 17, owner, field, now, out next) && next == "rājā", "reselected conversion cycles with preserved clipboard");
+            Check(!cycle.NextSelected("unicode", "auto", "other", 17, owner, field, now, out next), "changed selected text never cycles old text");
+            string root = Path.Combine(Path.GetDirectoryName(typeof(SelectionRefinementTests).Assembly.Location), "selection-refinement-artifacts", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path.Combine(root, "data"));
+            Directory.CreateDirectory(Configuration.Folder(root));
+            foreach (string file in Directory.GetFiles(Path.Combine(args[0], "data")))
+                File.Copy(file, Path.Combine(root, "data", Path.GetFileName(file)));
+            Configuration.Write(Configuration.Short(root), new Dictionary<string, string>());
+            string overrides = Path.Combine(Configuration.Folder(root), "word-spellings.tsv");
+            File.WriteAllText(overrides, "raja\trājā\nage\t!keep\nteh\t!keep\nKrsna\t!keep\n", new UTF8Encoding(false));
+            using (Core c = new Core(root))
+            {
+                Equal("rājā", c.Word("raja", "unicode"), "preferred ambiguous spelling");
+                Equal("Rājā", c.Word("Raja", "unicode"), "preferred case");
+                Equal("räjä", c.ConvertHighlighted("raja", "balaram"), "preferred highlight cycle");
+                foreach (string mode in new[]
+                {
+                    "unicode",
+                    "balaram",
+                    "plain",
+                    "itrans",
+                    "devanagari",
+                    "bengali"
+                }
+
+                )
+                {
+                    Equal("age Krsna", c.ConvertCopied("age Krsna", mode), "never convert all explicit outputs " + mode);
+                    Check(c.CaretChoices("Krsna", mode).Length == 0, "never cycle " + mode);
+                    Equal(null, c.Trigger("Krsna>"), "never trigger " + mode);
+                }
+
+                Equal(null, c.CorrectCompletedWord("teh "), "never autocorrect");
+                Equal("Krsna", c.ConvertItrans("Krsna", "unicode"), "never ITRANS tool");
+                Equal("Krsna", c.ConvertBalaram("Krsna", "unicode"), "never Balaram tool");
+                Equal("Krsna’s", c.ConvertCopied("Krsna’s", "unicode"), "never possessive");
+                Equal("Earlier age, rājā and Krsna!", c.ConvertHighlighted("Earlier age, raja and Krsna!", "unicode"), "preferred mixed passage");
+                File.WriteAllText(overrides, "age\t!keep\nAGE\tāge\n");
+                try
+                {
+                    using (Core bad = Core.Reload(c, root))
+                    {
+                    }
+
+                    Check(false, "duplicate config refused");
+                }
+                catch (InvalidDataException)
+                {
+                    Check(true, "duplicate config refused");
+                }
+
+                Equal("rājā", c.Word("raja", "unicode"), "failed reload leaves current configuration");
+            }
+
+            File.WriteAllText(overrides, "raja\t!keep\n", new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(Configuration.Folder(root), "conversion-rules.tsv"), "raja\trājā\n", new UTF8Encoding(false));
+            using (Core c = new Core(root))
+            {
+                Equal("raja", c.Convert("raja", "unicode"), "never overrides broad text rules");
+                Equal("raja", c.ConvertCopied("raja", "unicode"), "never copied broad text rules");
+            }
+
+            foreach (string bad in new[]
+            {
+                "two words\trāja",
+                "raja\t",
+                "raja\t!wat",
+                "raja\trāja\textra"
+            }
+
+            )
+            {
+                File.WriteAllText(overrides, bad + "\n");
+                try
+                {
+                    using (Core invalid = new Core(root))
+                    {
+                    }
+
+                    Check(false, "invalid override refused");
+                }
+                catch (InvalidDataException)
+                {
+                    Check(true, "invalid override refused");
+                }
+            }
+
+            Console.WriteLine("PASS: " + passed + " FAIL: " + failed);
+            return failed == 0 ? 0 : 1;
+        }
+    }
 }

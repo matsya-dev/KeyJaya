@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "normal_p95_ms": 150,
+  "description": "Warm conversion-engine p95 budget. Native editor discovery, clipboard and input delivery are outside this measurement. Engine startup and first requests are reported separately."
+}

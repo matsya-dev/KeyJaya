@@ -35,6 +35,22 @@ included in `third_party/hindi/`; their source URLs are pinned to a specific ups
 revision. Use `tools/fetch_hindi_sources.py --check` to verify them. English source
 dictionaries and full notices are included.
 
+## Application distribution
+
+On **25 October 2026**, the project owner explicitly confirmed separate permissions
+to distribute the Sanskrit Heritage, Hindi Aspell/Hunspell and English
+SCOWL-derived data without their copyright/license notices. The owner requested
+that those third-party notices be omitted from the installed application while
+KeyJaya's own copyright and MIT notice remain.
+
+This records the owner's confirmation; the upstream license documents have not
+been altered. Original sources, notices and provenance stay in this development
+repository. `assets/distribution-exclusions.txt` identifies source-only files
+omitted by the build and package tools and retired, with a backup, during upgrades.
+The original-code `LICENSE` is retained in the application and checked byte for
+byte during verification. Conversion dictionaries and editable settings are
+protected from removal by the exclusion-policy validator.
+
 No Balarama font binaries are included; `defaults/font-encoding.tsv` contains font
 names and encoding choices only. The app icon is the approved KeyJaya asset.
 
@@ -42,6 +58,7 @@ names and encoding choices only. The app icon is the approved KeyJaya asset.
 
 - Preserve the original-code license and copyright notice.
 - Confirm that permission covers any newly added book content.
-- Retain the full dictionary licenses, attribution and corresponding sources.
+- Retain the full upstream dictionary records in development sources; apply the
+  documented separate-permission policy to the application distribution.
 - Review the staged Git changes and run the repository audit.
 - Keep installers in GitHub Release assets rather than ordinary Git history.

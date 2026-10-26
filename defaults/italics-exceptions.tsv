@@ -1,6 +1,0 @@
-# Personal automatic-italics rules. Plain Roman key, Tab, then roman / italic / name.
-# roman: never add automatic italics. italic: add italics. name: stay roman when capitalized.
-# These rules affect formatting, not spelling or capitalization. Complete verses remain italic.
-# Save and Reload configuration. Examples (remove # to activate):
-# raja	name
-# bhakti	italic

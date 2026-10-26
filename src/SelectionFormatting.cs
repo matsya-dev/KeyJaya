@@ -1,70 +1,431 @@
-using System;using System.Linq;using System.Collections.Generic;using System.Text.RegularExpressions;
-namespace KeyJaya {
-public sealed class ItalicSpan {public readonly int Start,Length;public readonly bool Force;public ItalicSpan(int start,int length,bool force=false){Start=start;Length=length;Force=force;}}
-public static class MarkdownFormatting {
- public static string DisplayText(string text){var mask=Protected(text,false);return Regex.Replace(text,@"(?<![\\*])\*([^*\r\n]+)\*(?!\*)",m=>mask.Skip(m.Index).Take(m.Length).Any(x=>x)?m.Value:m.Groups[1].Value);}
- public static bool[] Protected(string text,bool headings=true){var mask=new bool[text.Length];string pattern=@"(?ms)^\s*(`{3,}|~{3,})[^\r\n]*\r?\n(?:.*?^\s*\1\s*$|.*\z)|`+[^`\r\n]*`+|!?\[[^\]\r\n]*\]\([^\)\r\n]*\)|!?\[\[[^\]\r\n]*\]\]|(?m)^\s{0,3}#{1,6}\s+[^\r\n]*|(?m)^\s*\[[^\]]+\]:[^\r\n]*";if(!headings)pattern=pattern.Replace(@"|(?m)^\s{0,3}#{1,6}\s+[^\r\n]*","");foreach(Match m in Regex.Matches(text,pattern))for(int n=m.Index;n<m.Index+m.Length;n++)mask[n]=true;return mask;}
- public static bool InFence(string prefix){string fence=null;foreach(string line in Regex.Split(prefix,@"\r\n|\r|\n")){Match m=Regex.Match(line,@"^\s{0,3}(`{3,}|~{3,})");if(!m.Success)continue;if(fence==null)fence=m.Groups[1].Value;else if(m.Groups[1].Value[0]==fence[0]&&m.Groups[1].Value.Length>=fence.Length)fence=null;}return fence!=null;}
- public static bool ExistingItalics(string prefix,string suffix){return Regex.IsMatch(prefix,@"(?:\*|_)$")&&Regex.IsMatch(suffix,@"^(?:\*|_)");}
- public static string ConvertProtected(string input,Func<string,string> convert){var mask=Protected(input,false);var output=new System.Text.StringBuilder();int at=0;while(at<input.Length){bool keep=mask[at];int end=at+1;while(end<input.Length&&mask[end]==keep)end++;string part=input.Substring(at,end-at);output.Append(keep?part:convert(part));at=end;}return output.ToString();}
- public static string Italicize(string output,ItalicSpan[] spans,string prefix="",string suffix=""){if(InFence(prefix)||ExistingItalics(prefix,suffix))return output;var mask=Protected(output);var result=new System.Text.StringBuilder(output);foreach(var span in (spans??new ItalicSpan[0]).OrderByDescending(x=>x.Start)){if(span.Start<0||span.Length<1||span.Start>output.Length-span.Length||mask.Skip(span.Start).Take(span.Length).Any(x=>x))continue;string before=prefix+output.Substring(0,span.Start),after=output.Substring(span.Start+span.Length)+suffix;string line=before.Substring(Math.Max(0,before.LastIndexOf('\n')+1));if(Regex.IsMatch(line,@"^\s{0,3}#{1,6}\s")||ExistingItalics(before,after))continue;result.Insert(span.Start+span.Length,"*");result.Insert(span.Start,"*");}return result.ToString();}
-}
-public static class IndicStyle {
- static readonly HashSet<string> HistoricalGoswamis=new HashSet<string>(new[]{"rupa","sanatana","jiva","raghunatha dasa","raghunatha bhatta","gopala bhatta","visvanatha cakravarti"},StringComparer.OrdinalIgnoreCase);
- static readonly HashSet<string> ContemporaryGoswamis=new HashSet<string>(new[]{"tamala krsna","satsvarupa dasa","jayapataka","bhakti caru","radhanatha","romapada","giriraja"},StringComparer.OrdinalIgnoreCase);
- public static string GoswamiTitle(string input,Match title){
-  int start=title.Index;while(start>0&&title.Index-start<100&&input[start-1]!='\n'&&input[start-1]!='\r'&&input[start-1]!='.'&&input[start-1]!='!'&&input[start-1]!='?')start--;
-  string before=Regex.Replace(EncodingMap.Ascii(EncodingMap.FromBalaram(input.Substring(start,title.Index-start))).ToLowerInvariant(),@"[^a-z]+"," ").Trim();
-  foreach(string name in ContemporaryGoswamis)if(before==name||before.EndsWith(" "+name,StringComparison.Ordinal))return "Goswami";
-  foreach(string name in HistoricalGoswamis)if(before==name||before.EndsWith(" "+name,StringComparison.Ordinal))return "Gosvāmī";
-  return title.Value.Equals("gosvami",StringComparison.OrdinalIgnoreCase)?"Gosvāmī":title.Value;
- }
- static readonly HashSet<string> Honorifics=new HashSet<string>("dasa das dasi devi svami swami gosvami goswami gosvamii gosvamipada maharaja maharaj maharani thakura acarya acharya bhattacarya bhattacharya prabhu pandita babaji".Split(' '),StringComparer.OrdinalIgnoreCase);
- static bool NameGap(string text,Match left,Match right){string gap=text.Substring(left.Index+left.Length,right.Index-left.Index-left.Length);return gap.Length>0&&gap.Length<=8&&Regex.IsMatch(gap,@"^[ \t\u00a0""'“”‘’]+$");}
- static readonly HashSet<string> NameStops=new HashSet<string>("a an the this that these those and or but in on at of from to by with for earlier untouched discusses describes".Split(' '),StringComparer.OrdinalIgnoreCase);
- public static ISet<int> NameContext(string text,string mode,Func<string,bool> indic=null){
-  var protectedWords=new HashSet<int>();var words=Regex.Matches(text,@"[\p{L}\p{M}]+(?:[-\u2011\u2013'’][\p{L}\p{M}]+)*");
-  for(int n=0;n<words.Count;n++){
-   if(!Honorifics.Contains(Stem(Key(words[n].Value,mode))))continue;
-   var group=new List<int>{n};bool foundName=false;
-   for(int j=n-1;j>=0&&n-j<=5;j--){string key=Stem(Key(words[j].Value,mode));if(!NameGap(text,words[j],words[j+1])||Titles.Contains(key)||NameStops.Contains(key))break;bool title=Honorifics.Contains(key);bool lowerName=char.IsUpper(words[n].Value[0])&&indic!=null&&indic(words[j].Value);if(!title&&!char.IsUpper(words[j].Value[0])&&!lowerName)break;group.Add(j);if(!title)foundName=true;}
-   // Swami/Maharaja before a capitalized personal name is also a title context.
-   if(!foundName&&n+1<words.Count&&NameGap(text,words[n],words[n+1])&&char.IsUpper(words[n+1].Value[0])&&!NameStops.Contains(Key(words[n+1].Value,mode))&&!Titles.Contains(Key(words[n+1].Value,mode))){group.Add(n+1);foundName=true;}
-   if(foundName)foreach(int index in group)protectedWords.Add(words[index].Index);
-  }return protectedWords;
- }
- // User-supplied BVT exceptions take precedence. Further loanword categories follow
- // BBT Style Guide (2016), pp. 38-40; this is formatting, not case normalization.
- static readonly HashSet<string> Roman=new HashSet<string>("gaudiya gosvamipada ashram dharma guru karma mantra yoga sadhu ahimsa maharani maharaja mahatma mandala maya mukti nirvana samsara sutra yogi bhagavan brahman gosvami goswami mayavada mayavadi paramatma vaisnava vaishnava vaisnavi vedanta veda vedas ghee kali-yuga gaura-purnima janmastami ratha-yatra sankhya vaisesika karma-mimamsa".Split(' '),StringComparer.OrdinalIgnoreCase);
- static readonly HashSet<string> Names=new HashSet<string>("vyasa gaura nitai nimai mahaprabhu srila sri shri prabhupada krsna krishna rama radha radhika radharani govinda gopala gopinatha madhava gopijana gauranga gauracandra caitanya chaitanya nityananda advaita gadadhara srivasa haridasa narottama syamananda srinivasa bhaktivinoda bhaktisiddhanta bhaktivedanta visvanatha sanatana raghunatha ramacandra baladeva balarama vasudeva devaki yasoda nanda arjuna bhima yudhisthira kunti draupadi kaunteya partha hanuman sita laksmana bharata siva shiva durga ganesa ganesha sarasvati saraswati laksmi lakshmi visnu vishnu narayana brahma dhritarastra dhrtarastra sanjaya pandu kuruksetra vrndavana vrindavana vrndavan vrindavan mayapura mayapur navadvipa mathura dvaraka dvarika jagannatha jagannath puri jagannatha-puri gokula goloka vaikuntha yamuna ganga godavari narmada kaveri varanasi ayodhya dvaraka jagannathapuri hari hare varuna".Split(' ').Select(x=>EncodingMap.Ascii(x)),StringComparer.OrdinalIgnoreCase);
- static readonly HashSet<string> CapitalNames=new HashSet<string>("satsvarupa sarvabhauma bhattacarya jiva rupa tulasi sruti smrti visakha lalita manjari madhuri madhavi malati vrnda".Split(' '),StringComparer.OrdinalIgnoreCase);
- public static string Key(string word,string mode){string decoded=mode=="balaram"?EncodingMap.FromBalaram(word):word;if(mode=="itrans"){string value;if(Itrans.TryWord(word,out value))decoded=value;}if(IndicScripts.Contains(decoded))decoded=IndicScripts.ToIast(decoded);return EncodingMap.Ascii(decoded).ToLowerInvariant().Replace('\u2011','-').Replace('\u2013','-');}
- static string Stem(string key){if(key.EndsWith("'s")||key.EndsWith("’s"))return key.Substring(0,key.Length-2);return key;}
- public static readonly HashSet<string> Titles=new HashSet<string>("bhagavad-gita srimad-bhagavatam bhagavatam caitanya-caritamrta caitanya-caritamrita caitanya-bhagavata bhakti-rasamrta-sindhu bhakti-rasamrita-sindhu sarartha-darsini isopanisad isopanishad brahma-samhita hari-bhakti-vilasa brhad-bhagavatamrta".Split(' '),StringComparer.OrdinalIgnoreCase);
- static readonly HashSet<string> Generic=new HashSet<string>("ayurveda tamala bhakti jnana sikha sarartha darsini sraddha nistha ruci asakti prema seva puja diksa siksa tattva svarupa suddha ananda anartha adhikara pusti marga purnima raja prana asana".Split(' '),StringComparer.OrdinalIgnoreCase);
- public static bool RomanWord(string word,string mode,ISet<string> bookNames=null){if(string.IsNullOrEmpty(word))return false;string key=Stem(Key(word,mode));if(Titles.Contains(key))return false;if(CompoundForms.IsRoman(key))return true;if(Roman.Contains(key)||Names.Contains(key))return true;if(System.Text.RegularExpressions.Regex.IsMatch(key,@"^(?:gaura|guru|vyasa|buddha|caitanya|nrsimha|nrisimha|narasimha|rama|ratha)-(?:purnima|astami|navami|yatra|jayanti)$"))return true;if(key.Contains("-")&&key.Split('-').All(x=>Names.Contains(x)))return true;if(key.EndsWith("s")&&Roman.Contains(key.Substring(0,key.Length-1)))return true;return char.IsUpper(word[0])&&(CapitalNames.Contains(key)||bookNames!=null&&bookNames.Contains(key)&&!Generic.Contains(key));}
-}
-public static class RichClipboard {
- static string Escape(string text){return text.Replace("&","&amp;").Replace("<","&lt;").Replace(">","&gt;").Replace("\"","&quot;");}
- public static string Fragment(string text,ItalicSpan[] spans){if(text==null||text.Length>200000)return null;var result=new System.Text.StringBuilder();result.Append("<span style=\"white-space:pre-wrap\">");int at=0;foreach(var span in (spans??new ItalicSpan[0]).OrderBy(x=>x.Start)){if(span.Start<at||span.Length<=0||span.Start>text.Length-span.Length)return null;result.Append(Escape(text.Substring(at,span.Start-at)));result.Append("<i>");result.Append(Escape(text.Substring(span.Start,span.Length)));result.Append("</i>");at=span.Start+span.Length;}result.Append(Escape(text.Substring(at)));result.Append("</span>");return result.ToString();}
- public static byte[] Html(string text,ItalicSpan[] spans){string fragment=Fragment(text,spans);if(fragment==null)return null;const string start="<html><body><!--StartFragment-->",end="<!--EndFragment--></body></html>";const string format="Version:0.9\r\nStartHTML:{0:0000000000}\r\nEndHTML:{1:0000000000}\r\nStartFragment:{2:0000000000}\r\nEndFragment:{3:0000000000}\r\n";var utf8=new System.Text.UTF8Encoding(false);int header=utf8.GetByteCount(string.Format(System.Globalization.CultureInfo.InvariantCulture,format,0,0,0,0)),begin=header+utf8.GetByteCount(start),finish=begin+utf8.GetByteCount(fragment),total=finish+utf8.GetByteCount(end);return utf8.GetBytes(string.Format(System.Globalization.CultureInfo.InvariantCulture,format,header,total,begin,finish)+start+fragment+end+"\0");}
-}
-public sealed class TextPatch {public readonly int Offset,Length;public readonly string Before,After;public TextPatch(int offset,string before,string after){Offset=offset;Before=before;Length=before.Length;After=after;}}
-public sealed class SelectionAnchor {
- readonly byte[] digest;readonly int length;
- public SelectionAnchor(string prefix){if(prefix==null||prefix.Length>200000)throw new ArgumentException("Invalid selection prefix");length=prefix.Length;using(var hash=System.Security.Cryptography.SHA256.Create())digest=hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(prefix));}
- public string Key {get{return length+":"+Convert.ToBase64String(digest);}}
- public bool Matches(string prefix){if(prefix==null||prefix.Length!=length)return false;byte[] current;using(var hash=System.Security.Cryptography.SHA256.Create())current=hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(prefix));int mismatch=0;for(int n=0;n<digest.Length;n++)mismatch|=digest[n]^current[n];return mismatch==0;}
-}
-public static class SelectionFormatting {
- public static int WordOwnedLength(string expected,string observed,int length){if(expected==null||observed==null)return -1;if(length==expected.Length&&observed==expected)return length;if(length==expected.Length+1&&observed==expected+"\n")return expected.Length;return -1;}
- public static TextPatch[] Plan(string input,string output){if(input==null||output==null||input.Length>200000||output.Length>200000)return null;var patches=new List<TextPatch>();var a=Regex.Matches(input,@"\s+|\S+");var b=Regex.Matches(output,@"\s+|\S+");bool aligned=a.Count==b.Count;for(int n=0;aligned&&n<a.Count;n++)if(char.IsWhiteSpace(a[n].Value[0])||char.IsWhiteSpace(b[n].Value[0]))aligned=a[n].Value==b[n].Value;
-  if(aligned){for(int n=0;n<a.Count;n++)if(!Add(a[n].Value,b[n].Value,a[n].Index,patches))return null;}else if(!Add(input,output,0,patches))return null;var styled=new List<TextPatch>();foreach(var p in patches){if(p.Length<=1||p.After.Length==0)styled.Add(p);else for(int i=0;i<p.Length;i++){int first=(i*p.After.Length+p.Length-1)/p.Length,last=((i+1)*p.After.Length+p.Length-1)/p.Length;styled.Add(new TextPatch(p.Offset+i,p.Before[i].ToString(),p.After.Substring(first,last-first)));}}return styled.OrderByDescending(x=>x.Offset).ToArray();}
- static bool Add(string a,string b,int offset,List<TextPatch> changes){if(a==b)return true;if(a.Length==b.Length){for(int n=0;n<a.Length;n++)if(a[n]!=b[n])changes.Add(new TextPatch(offset+n,a[n].ToString(),b[n].ToString()));return true;}
-  int head=0;while(head<a.Length&&head<b.Length&&a[head]==b[head])head++;int tail=0;while(tail<a.Length-head&&tail<b.Length-head&&a[a.Length-tail-1]==b[b.Length-tail-1])tail++;a=a.Substring(head,a.Length-head-tail);b=b.Substring(head,b.Length-head-tail);offset+=head;if((long)(a.Length+1)*(b.Length+1)>1000000)return false;
-  int[,] lcs=new int[a.Length+1,b.Length+1];for(int i=a.Length-1;i>=0;i--)for(int j=b.Length-1;j>=0;j--)lcs[i,j]=a[i]==b[j]?1+lcs[i+1,j+1]:Math.Max(lcs[i+1,j],lcs[i,j+1]);int x=0,y=0;
-  while(x<a.Length||y<b.Length){if(x<a.Length&&y<b.Length&&a[x]==b[y]){x++;y++;continue;}int start=x,begin=y;while(x<a.Length||y<b.Length){if(x<a.Length&&y<b.Length&&a[x]==b[y])break;if(y<b.Length&&(x==a.Length||lcs[x,y+1]>=lcs[x+1,y]))y++;else x++;}changes.Add(new TextPatch(offset+start,a.Substring(start,x-start),b.Substring(begin,y-begin)));}return true;
- }
- public static string Apply(string input,TextPatch[] patches){if(patches==null)return null;foreach(var p in patches){if(p.Offset<0||p.Offset+p.Length>input.Length||input.Substring(p.Offset,p.Length)!=p.Before)return null;input=input.Remove(p.Offset,p.Length).Insert(p.Offset,p.After);}return input;}
-}
+// KeyJaya: Text patches, font/italic spans, rich HTML, and Markdown formatting policy.
+// Formatting decisions preserve the output text and protect existing Markdown code/link syntax.
+using System;
+using System.Linq;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
+
+namespace KeyJaya
+{
+    public sealed class ItalicSpan
+    {
+        public readonly int Start, Length;
+        public readonly bool Force;
+        public ItalicSpan(int start, int length, bool force = false)
+        {
+            Start = start;
+            Length = length;
+            Force = force;
+        }
+    }
+
+    public static class MarkdownFormatting
+    {
+        public static string DisplayText(string text)
+        {
+            var mask = Protected(text, false);
+            return Regex.Replace(text, @"(?<![\\*])\*([^*\r\n]+)\*(?!\*)", m => mask.Skip(m.Index).Take(m.Length).Any(x => x) ? m.Value : m.Groups[1].Value);
+        }
+
+        public static bool[] Protected(string text, bool headings = true)
+        {
+            var mask = new bool[text.Length];
+            string pattern = @"(?ms)^\s*(`{3,}|~{3,})[^\r\n]*\r?\n(?:.*?^\s*\1\s*$|.*\z)|`+[^`\r\n]*`+|!?\[[^\]\r\n]*\]\([^\)\r\n]*\)|!?\[\[[^\]\r\n]*\]\]|(?m)^\s{0,3}#{1,6}\s+[^\r\n]*|(?m)^\s*\[[^\]]+\]:[^\r\n]*";
+            if (!headings)
+                pattern = pattern.Replace(@"|(?m)^\s{0,3}#{1,6}\s+[^\r\n]*", "");
+            foreach (Match m in Regex.Matches(text, pattern))
+                for (int n = m.Index; n < m.Index + m.Length; n++)
+                    mask[n] = true;
+            return mask;
+        }
+
+        public static bool InFence(string prefix)
+        {
+            string fence = null;
+            foreach (string line in Regex.Split(prefix, @"\r\n|\r|\n"))
+            {
+                Match m = Regex.Match(line, @"^\s{0,3}(`{3,}|~{3,})");
+                if (!m.Success)
+                    continue;
+                if (fence == null)
+                    fence = m.Groups[1].Value;
+                else if (m.Groups[1].Value[0] == fence[0] && m.Groups[1].Value.Length >= fence.Length)
+                    fence = null;
+            }
+
+            return fence != null;
+        }
+
+        public static bool ExistingItalics(string prefix, string suffix)
+        {
+            return Regex.IsMatch(prefix, @"(?:\*|_)$") && Regex.IsMatch(suffix, @"^(?:\*|_)");
+        }
+
+        public static string ConvertProtected(string input, Func<string, string> convert)
+        {
+            var mask = Protected(input, false);
+            var output = new System.Text.StringBuilder();
+            int at = 0;
+            while (at < input.Length)
+            {
+                bool keep = mask[at];
+                int end = at + 1;
+                while (end < input.Length && mask[end] == keep)
+                    end++;
+                string part = input.Substring(at, end - at);
+                output.Append(keep ? part : convert(part));
+                at = end;
+            }
+
+            return output.ToString();
+        }
+
+        public static string Italicize(string output, ItalicSpan[] spans, string prefix = "", string suffix = "")
+        {
+            if (InFence(prefix) || ExistingItalics(prefix, suffix))
+                return output;
+            var mask = Protected(output);
+            var result = new System.Text.StringBuilder(output);
+            foreach (var span in (spans ?? new ItalicSpan[0]).OrderByDescending(x => x.Start))
+            {
+                if (span.Start < 0 || span.Length < 1 || span.Start > output.Length - span.Length || mask.Skip(span.Start).Take(span.Length).Any(x => x))
+                    continue;
+                string before = prefix + output.Substring(0, span.Start), after = output.Substring(span.Start + span.Length) + suffix;
+                string line = before.Substring(Math.Max(0, before.LastIndexOf('\n') + 1));
+                if (Regex.IsMatch(line, @"^\s{0,3}#{1,6}\s") || ExistingItalics(before, after))
+                    continue;
+                result.Insert(span.Start + span.Length, "*");
+                result.Insert(span.Start, "*");
+            }
+
+            return result.ToString();
+        }
+    }
+
+    public static class IndicStyle
+    {
+        static readonly HashSet<string> HistoricalGoswamis = new HashSet<string>(new[] { "rupa", "sanatana", "jiva", "raghunatha dasa", "raghunatha bhatta", "gopala bhatta", "visvanatha cakravarti" }, StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> ContemporaryGoswamis = new HashSet<string>(new[] { "tamala krsna", "satsvarupa dasa", "jayapataka", "bhakti caru", "radhanatha", "romapada", "giriraja" }, StringComparer.OrdinalIgnoreCase);
+        public static string GoswamiTitle(string input, Match title)
+        {
+            int start = title.Index;
+            while (start > 0 && title.Index - start < 100 && input[start - 1] != '\n' && input[start - 1] != '\r' && input[start - 1] != '.' && input[start - 1] != '!' && input[start - 1] != '?')
+                start--;
+            string before = Regex.Replace(EncodingMap.Ascii(EncodingMap.FromBalaram(input.Substring(start, title.Index - start))).ToLowerInvariant(), @"[^a-z]+", " ").Trim();
+            foreach (string name in ContemporaryGoswamis)
+                if (before == name || before.EndsWith(" " + name, StringComparison.Ordinal))
+                    return "Goswami";
+            foreach (string name in HistoricalGoswamis)
+                if (before == name || before.EndsWith(" " + name, StringComparison.Ordinal))
+                    return "Gosvāmī";
+            return title.Value.Equals("gosvami", StringComparison.OrdinalIgnoreCase) ? "Gosvāmī" : title.Value;
+        }
+
+        static readonly HashSet<string> Honorifics = new HashSet<string>("dasa das dasi devi svami swami gosvami goswami gosvamii gosvamipada maharaja maharaj maharani thakura acarya acharya bhattacarya bhattacharya prabhu pandita babaji".Split(' '), StringComparer.OrdinalIgnoreCase);
+        static bool NameGap(string text, Match left, Match right)
+        {
+            string gap = text.Substring(left.Index + left.Length, right.Index - left.Index - left.Length);
+            return gap.Length > 0 && gap.Length <= 8 && Regex.IsMatch(gap, @"^[ \t\u00a0""'“”‘’]+$");
+        }
+
+        static readonly HashSet<string> NameStops = new HashSet<string>("a an the this that these those and or but in on at of from to by with for earlier untouched discusses describes".Split(' '), StringComparer.OrdinalIgnoreCase);
+        public static ISet<int> NameContext(string text, string mode, Func<string, bool> indic = null)
+        {
+            var protectedWords = new HashSet<int>();
+            var words = Regex.Matches(text, @"[\p{L}\p{M}]+(?:[-\u2011\u2013'’][\p{L}\p{M}]+)*");
+            for (int n = 0; n < words.Count; n++)
+            {
+                if (!Honorifics.Contains(Stem(Key(words[n].Value, mode))))
+                    continue;
+                var group = new List<int>
+                {
+                    n
+                };
+                bool foundName = false;
+                for (int j = n - 1; j >= 0 && n - j <= 5; j--)
+                {
+                    string key = Stem(Key(words[j].Value, mode));
+                    if (!NameGap(text, words[j], words[j + 1]) || Titles.Contains(key) || NameStops.Contains(key))
+                        break;
+                    bool title = Honorifics.Contains(key);
+                    bool lowerName = char.IsUpper(words[n].Value[0]) && indic != null && indic(words[j].Value);
+                    if (!title && !char.IsUpper(words[j].Value[0]) && !lowerName)
+                        break;
+                    group.Add(j);
+                    if (!title)
+                        foundName = true;
+                }
+
+                // Swami/Maharaja before a capitalized personal name is also a title context.
+                if (!foundName && n + 1 < words.Count && NameGap(text, words[n], words[n + 1]) && char.IsUpper(words[n + 1].Value[0]) && !NameStops.Contains(Key(words[n + 1].Value, mode)) && !Titles.Contains(Key(words[n + 1].Value, mode)))
+                {
+                    group.Add(n + 1);
+                    foundName = true;
+                }
+
+                if (foundName)
+                    foreach (int index in group)
+                        protectedWords.Add(words[index].Index);
+            }
+
+            return protectedWords;
+        }
+
+        // User-supplied BVT exceptions take precedence. Further loanword categories follow
+        // BBT Style Guide (2016), pp. 38-40; this is formatting, not case normalization.
+        static readonly HashSet<string> Roman = new HashSet<string>("gaudiya gosvamipada ashram dharma guru karma mantra yoga sadhu ahimsa maharani maharaja mahatma mandala maya mukti nirvana samsara sutra yogi bhagavan brahman gosvami goswami mayavada mayavadi paramatma vaisnava vaishnava vaisnavi vedanta veda vedas ghee kali-yuga gaura-purnima janmastami ratha-yatra sankhya vaisesika karma-mimamsa".Split(' '), StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> Names = new HashSet<string>("vyasa gaura nitai nimai mahaprabhu srila sri shri prabhupada krsna krishna rama radha radhika radharani govinda gopala gopinatha madhava gopijana gauranga gauracandra caitanya chaitanya nityananda advaita gadadhara srivasa haridasa narottama syamananda srinivasa bhaktivinoda bhaktisiddhanta bhaktivedanta visvanatha sanatana raghunatha ramacandra baladeva balarama vasudeva devaki yasoda nanda arjuna bhima yudhisthira kunti draupadi kaunteya partha hanuman sita laksmana bharata siva shiva durga ganesa ganesha sarasvati saraswati laksmi lakshmi visnu vishnu narayana brahma dhritarastra dhrtarastra sanjaya pandu kuruksetra vrndavana vrindavana vrndavan vrindavan mayapura mayapur navadvipa mathura dvaraka dvarika jagannatha jagannath puri jagannatha-puri gokula goloka vaikuntha yamuna ganga godavari narmada kaveri varanasi ayodhya dvaraka jagannathapuri hari hare varuna".Split(' ').Select(x => EncodingMap.Ascii(x)), StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> CapitalNames = new HashSet<string>("satsvarupa sarvabhauma bhattacarya jiva rupa tulasi sruti smrti visakha lalita manjari madhuri madhavi malati vrnda".Split(' '), StringComparer.OrdinalIgnoreCase);
+        public static string Key(string word, string mode)
+        {
+            string decoded = mode == "balaram" ? EncodingMap.FromBalaram(word) : word;
+            if (mode == "itrans")
+            {
+                string value;
+                if (Itrans.TryWord(word, out value))
+                    decoded = value;
+            }
+
+            if (IndicScripts.Contains(decoded))
+                decoded = IndicScripts.ToIast(decoded);
+            return EncodingMap.Ascii(decoded).ToLowerInvariant().Replace('\u2011', '-').Replace('\u2013', '-');
+        }
+
+        static string Stem(string key)
+        {
+            if (key.EndsWith("'s") || key.EndsWith("’s"))
+                return key.Substring(0, key.Length - 2);
+            return key;
+        }
+
+        public static readonly HashSet<string> Titles = new HashSet<string>("bhagavad-gita srimad-bhagavatam bhagavatam caitanya-caritamrta caitanya-caritamrita caitanya-bhagavata bhakti-rasamrta-sindhu bhakti-rasamrita-sindhu sarartha-darsini isopanisad isopanishad brahma-samhita hari-bhakti-vilasa brhad-bhagavatamrta".Split(' '), StringComparer.OrdinalIgnoreCase);
+        static readonly HashSet<string> Generic = new HashSet<string>("ayurveda tamala bhakti jnana sikha sarartha darsini sraddha nistha ruci asakti prema seva puja diksa siksa tattva svarupa suddha ananda anartha adhikara pusti marga purnima raja prana asana".Split(' '), StringComparer.OrdinalIgnoreCase);
+        public static bool RomanWord(string word, string mode, ISet<string> bookNames = null)
+        {
+            if (string.IsNullOrEmpty(word))
+                return false;
+            string key = Stem(Key(word, mode));
+            if (Titles.Contains(key))
+                return false;
+            if (CompoundForms.IsRoman(key))
+                return true;
+            if (Roman.Contains(key) || Names.Contains(key))
+                return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(key, @"^(?:gaura|guru|vyasa|buddha|caitanya|nrsimha|nrisimha|narasimha|rama|ratha)-(?:purnima|astami|navami|yatra|jayanti)$"))
+                return true;
+            if (key.Contains("-") && key.Split('-').All(x => Names.Contains(x)))
+                return true;
+            if (key.EndsWith("s") && Roman.Contains(key.Substring(0, key.Length - 1)))
+                return true;
+            return char.IsUpper(word[0]) && (CapitalNames.Contains(key) || bookNames != null && bookNames.Contains(key) && !Generic.Contains(key));
+        }
+    }
+
+    public static class RichClipboard
+    {
+        static string Escape(string text)
+        {
+            return text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+        }
+
+        public static string Fragment(string text, ItalicSpan[] spans)
+        {
+            if (text == null || text.Length > 200000)
+                return null;
+            var result = new System.Text.StringBuilder();
+            result.Append("<span style=\"white-space:pre-wrap\">");
+            int at = 0;
+            foreach (var span in (spans ?? new ItalicSpan[0]).OrderBy(x => x.Start))
+            {
+                if (span.Start < at || span.Length <= 0 || span.Start > text.Length - span.Length)
+                    return null;
+                result.Append(Escape(text.Substring(at, span.Start - at)));
+                result.Append("<i>");
+                result.Append(Escape(text.Substring(span.Start, span.Length)));
+                result.Append("</i>");
+                at = span.Start + span.Length;
+            }
+
+            result.Append(Escape(text.Substring(at)));
+            result.Append("</span>");
+            return result.ToString();
+        }
+
+        public static byte[] Html(string text, ItalicSpan[] spans)
+        {
+            string fragment = Fragment(text, spans);
+            if (fragment == null)
+                return null;
+            const string start = "<html><body><!--StartFragment-->", end = "<!--EndFragment--></body></html>";
+            const string format = "Version:0.9\r\nStartHTML:{0:0000000000}\r\nEndHTML:{1:0000000000}\r\nStartFragment:{2:0000000000}\r\nEndFragment:{3:0000000000}\r\n";
+            var utf8 = new System.Text.UTF8Encoding(false);
+            int header = utf8.GetByteCount(string.Format(System.Globalization.CultureInfo.InvariantCulture, format, 0, 0, 0, 0)), begin = header + utf8.GetByteCount(start), finish = begin + utf8.GetByteCount(fragment), total = finish + utf8.GetByteCount(end);
+            return utf8.GetBytes(string.Format(System.Globalization.CultureInfo.InvariantCulture, format, header, total, begin, finish) + start + fragment + end + "\0");
+        }
+    }
+
+    public sealed class TextPatch
+    {
+        public readonly int Offset, Length;
+        public readonly string Before, After;
+        public TextPatch(int offset, string before, string after)
+        {
+            Offset = offset;
+            Before = before;
+            Length = before.Length;
+            After = after;
+        }
+    }
+
+    public sealed class SelectionAnchor
+    {
+        readonly byte[] digest;
+        readonly int length;
+        public SelectionAnchor(string prefix)
+        {
+            if (prefix == null || prefix.Length > 200000)
+                throw new ArgumentException("Invalid selection prefix");
+            length = prefix.Length;
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+                digest = hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(prefix));
+        }
+
+        public string Key
+        {
+            get
+            {
+                return length + ":" + Convert.ToBase64String(digest);
+            }
+        }
+
+        public bool Matches(string prefix)
+        {
+            if (prefix == null || prefix.Length != length)
+                return false;
+            byte[] current;
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+                current = hash.ComputeHash(System.Text.Encoding.UTF8.GetBytes(prefix));
+            int mismatch = 0;
+            for (int n = 0; n < digest.Length; n++)
+                mismatch |= digest[n] ^ current[n];
+            return mismatch == 0;
+        }
+    }
+
+    public static class SelectionFormatting
+    {
+        public static int WordOwnedLength(string expected, string observed, int length)
+        {
+            if (expected == null || observed == null)
+                return -1;
+            if (length == expected.Length && observed == expected)
+                return length;
+            if (length == expected.Length + 1 && observed == expected + "\n")
+                return expected.Length;
+            return -1;
+        }
+
+        public static TextPatch[] Plan(string input, string output)
+        {
+            if (input == null || output == null || input.Length > 200000 || output.Length > 200000)
+                return null;
+            var patches = new List<TextPatch>();
+            var a = Regex.Matches(input, @"\s+|\S+");
+            var b = Regex.Matches(output, @"\s+|\S+");
+            bool aligned = a.Count == b.Count;
+            for (int n = 0; aligned && n < a.Count; n++)
+                if (char.IsWhiteSpace(a[n].Value[0]) || char.IsWhiteSpace(b[n].Value[0]))
+                    aligned = a[n].Value == b[n].Value;
+            if (aligned)
+            {
+                for (int n = 0; n < a.Count; n++)
+                    if (!Add(a[n].Value, b[n].Value, a[n].Index, patches))
+                        return null;
+            }
+            else if (!Add(input, output, 0, patches))
+                return null;
+            var styled = new List<TextPatch>();
+            foreach (var p in patches)
+            {
+                if (p.Length <= 1 || p.After.Length == 0)
+                    styled.Add(p);
+                else
+                    for (int i = 0; i < p.Length; i++)
+                    {
+                        int first = (i * p.After.Length + p.Length - 1) / p.Length, last = ((i + 1) * p.After.Length + p.Length - 1) / p.Length;
+                        styled.Add(new TextPatch(p.Offset + i, p.Before[i].ToString(), p.After.Substring(first, last - first)));
+                    }
+            }
+
+            return styled.OrderByDescending(x => x.Offset).ToArray();
+        }
+
+        static bool Add(string a, string b, int offset, List<TextPatch> changes)
+        {
+            if (a == b)
+                return true;
+            if (a.Length == b.Length)
+            {
+                for (int n = 0; n < a.Length; n++)
+                    if (a[n] != b[n])
+                        changes.Add(new TextPatch(offset + n, a[n].ToString(), b[n].ToString()));
+                return true;
+            }
+
+            int head = 0;
+            while (head < a.Length && head < b.Length && a[head] == b[head])
+                head++;
+            int tail = 0;
+            while (tail < a.Length - head && tail < b.Length - head && a[a.Length - tail - 1] == b[b.Length - tail - 1])
+                tail++;
+            a = a.Substring(head, a.Length - head - tail);
+            b = b.Substring(head, b.Length - head - tail);
+            offset += head;
+            if ((long)(a.Length + 1) * (b.Length + 1) > 1000000)
+                return false;
+            int[, ] lcs = new int[a.Length + 1, b.Length + 1];
+            for (int i = a.Length - 1; i >= 0; i--)
+                for (int j = b.Length - 1; j >= 0; j--)
+                    lcs[i, j] = a[i] == b[j] ? 1 + lcs[i + 1, j + 1] : Math.Max(lcs[i + 1, j], lcs[i, j + 1]);
+            int x = 0, y = 0;
+            while (x < a.Length || y < b.Length)
+            {
+                if (x < a.Length && y < b.Length && a[x] == b[y])
+                {
+                    x++;
+                    y++;
+                    continue;
+                }
+
+                int start = x, begin = y;
+                while (x < a.Length || y < b.Length)
+                {
+                    if (x < a.Length && y < b.Length && a[x] == b[y])
+                        break;
+                    if (y < b.Length && (x == a.Length || lcs[x, y + 1] >= lcs[x + 1, y]))
+                        y++;
+                    else
+                        x++;
+                }
+
+                changes.Add(new TextPatch(offset + start, a.Substring(start, x - start), b.Substring(begin, y - begin)));
+            }
+
+            return true;
+        }
+
+        public static string Apply(string input, TextPatch[] patches)
+        {
+            if (patches == null)
+                return null;
+            foreach (var p in patches)
+            {
+                if (p.Offset < 0 || p.Offset + p.Length > input.Length || input.Substring(p.Offset, p.Length) != p.Before)
+                    return null;
+                input = input.Remove(p.Offset, p.Length).Insert(p.Offset, p.After);
+            }
+
+            return input;
+        }
+    }
 }

@@ -1,5 +1,0 @@
-# KeyJaya custom conversion rules
-# Format: FROM<TAB>TO
-# Rules are applied after the standard Unicode/Balaram/ASCII conversion.
-# Example:
-# old-form	new-form

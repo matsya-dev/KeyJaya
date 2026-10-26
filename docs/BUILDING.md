@@ -1,5 +1,9 @@
 # Building KeyJaya
 
+For module responsibilities, edit-safety contracts and configuration precedence,
+see [the code map](ARCHITECTURE.md). Review conventions and optional formatting
+commands are in [Contributing](../CONTRIBUTING.md).
+
 ## Requirements
 
 - Windows x64 with .NET Framework 4.8 installed.
@@ -42,14 +46,28 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 | `out/app/engine/keyjaya-app.exe.config` | Required Framework/DPI configuration |
 | `out/app/KeyJaya-Uninstall.exe` | Uninstaller |
 | `out/payload.zip` | Installer input |
-| `out/KeyJaya-Setup-v1.9.5.exe` | Installable package |
+| `out/KeyJaya-Setup-v1.9.6.exe` | Installable package |
 
-The build copies checked-in data, defaults, and licensing notices, compiles the
+The build copies runtime data, defaults, and KeyJaya's original MIT notice, compiles the
 app and uninstaller, then packages the installer. It never launches the resident, installs anything,
 changes startup registration, or reads the installed user's configuration.
 
+Editable trigger defaults are copied from `assets/short-trigger-defaults.yml`;
+factory restoration and upgrade additions use that same source. The seven old
+customization templates are replaced by the sectioned `customizations.ini`.
+Existing TSV files are still accepted without being rewritten. Each build uses a
+fresh `out/app`; an earlier output is preserved under `out/previous-app-*` so
+obsolete defaults cannot leak into a new package.
+
 Keep the `.exe.config` beside the resident executable. The window DPI behavior
 depends on it and `src/runtime.manifest`.
+
+`assets/distribution-exclusions.txt` is the single list of source-only files.
+The build and ZIP packager omit those paths, and setup retires previous copies
+through its backed-up transaction. The list cannot remove user configuration,
+executables or runtime dictionary/index files. Upstream notices and provenance
+remain in the development repository; the owner's separate-permission
+confirmation and distribution scope are recorded in [Licensing](LICENSING.md).
 
 ## Data and repeatability
 
@@ -75,6 +93,11 @@ Update `VERSION`, `Version.Current` in `src/Core.cs`, the assembly/file versions
 deliberately detects drift from that baseline. After an intentional reviewed
 source/data update, refresh the corresponding baseline/manifest and version;
 do not bypass a mismatch without understanding the changed files.
+
+During authorized development, `python tools/audit_project.py --development`
+reports source drift while checking data integrity, exclusions and the current
+file layout. It does not update the accepted release baseline. The default audit
+still requires the accepted source hashes before a release.
 
 ## Documentation preview and compiled-app probe
 
