@@ -6,5 +6,5 @@ using System.Reflection;
 [assembly: AssemblyTitle("KeyJaya")]
 [assembly: AssemblyProduct("KeyJaya")]
 [assembly: AssemblyDescription("Windows typing and transliteration utility")]
-[assembly: AssemblyVersion("1.9.6.0")]
-[assembly: AssemblyFileVersion("1.9.6.0")]
+[assembly: AssemblyVersion("1.9.7.0")]
+[assembly: AssemblyFileVersion("1.9.7.0")]

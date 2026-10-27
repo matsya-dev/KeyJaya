@@ -53,7 +53,7 @@ setup details.
 [Report a bug](https://github.com/matsya-dev/KeyJaya/issues/new?template=bug-report.yml)
 · [Privacy](docs/PRIVACY.md)
 · [Build from source](docs/BUILDING.md)
-· [Unreleased development notes](docs/DEVELOPMENT_RELEASE_NOTES.md)
+· [Release notes](docs/DEVELOPMENT_RELEASE_NOTES.md)
 
 KeyJaya's original code is [MIT licensed](LICENSE). Book texts and third-party
 dictionaries retain their own terms; see [licensing](docs/LICENSING.md).

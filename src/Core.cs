@@ -12,7 +12,7 @@ namespace KeyJaya
 {
     public static class Version
     {
-        public const string Current = "1.9.6";
+        public const string Current = "1.9.7";
     }
 
     public static class EncodingMap

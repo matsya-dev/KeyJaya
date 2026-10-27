@@ -1,8 +1,7 @@
-# Unreleased development notes
+# KeyJaya 1.9.7 release notes
 
-These changes follow released KeyJaya **1.9.6**. They are saved as a local
-development checkpoint; the application version and accepted release baseline
-remain 1.9.6. No installer or published release has been prepared for this work.
+Changes since **1.9.6**, prepared for release on **27 October 2026**.
+KeyJaya supports Windows x64 with .NET Framework 4.8.
 
 ## Word comments and navigation
 
@@ -73,16 +72,21 @@ remain 1.9.6. No installer or published release has been prepared for this work.
 
 ## Verification
 
-The complete 44-suite regression run passed, followed by focused checks for the
-final formatting/performance changes and paste-popup safeguard. The compiled
-application, source/data integrity, documentation and formatting checks passed.
-The owner confirmed Word comment behavior, Ctrl italics, faster word/passage
-conversion, native one-step undo and conversion immediately after pasting in
-scratch content. Multiline Excel conversion, selected passages, retained
-selection and one-step undo were also confirmed in disposable cells.
+All 44 functional regression suites passed, followed by five focused suites for
+the final boundary cases. The compiled 1.9.7 application, strict source/data audit,
+developer-tool tests and engine benchmarks passed. The 38 packaged files and
+embedded payload were verified by SHA-256.
 
-Activation preserved all 47 checked profile files and startup registration.
-These checks cover the tested adapters and interactions rather than every editor
-or Office version. Details and test boundaries are in
-[Development verification](DEVELOPMENT_VERIFICATION.md); current usage is in the
+Disposable installation tests covered a clean install, edited-trigger upgrade,
+upgrade from the exact published 1.9.6 installer and complete failure rollback.
+Existing configuration and state were preserved, and the upgraded converter
+honored synthetic custom triggers, spellings, style rules and shortcuts. No live
+installation or working document was used for these tests.
+
+Earlier user-led scratch checks confirmed Word comments, Ctrl italics, faster
+conversion, native undo and multiline Excel editing. Review-specific padded Word
+and rich-editor Backspace cases have automated helper/model coverage. These checks
+do not establish every editor or Office version. The installer is unsigned.
+Details are in [Release verification](VERIFICATION.md) and
+[Development verification](DEVELOPMENT_VERIFICATION.md); usage is in the
 [User guide](USER_GUIDE.md).

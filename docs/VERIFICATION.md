@@ -1,5 +1,46 @@
 # Release verification
 
+## KeyJaya 1.9.7 — 27 October 2026
+
+- The reviewed functional changes passed all **44 isolated suites: 26,998,434
+  assertions, zero failures**. Final selection-boundary checks passed **five
+  focused suites, 647,601 assertions**, including **660 Ctrl-italics checks** and
+  **22 production font-cycle/undo checks**. Version-only release changes passed
+  the **19-check compiled-app probe** and strict source/data audit.
+- All **26 Python developer-tool tests**, **107 C# formatting checks**, **1,717
+  strict repository checks**, documentation links and pinned dictionary-source
+  checks passed. The accepted source baseline is now 1.9.7; runtime data hashes
+  and factory configuration were not changed.
+- All **38 packaged files** matched the payload ZIP by SHA-256. The installer's
+  embedded ZIP matched that verified payload. Isolated clean installation,
+  preservation of an edited trigger file and injected post-swap rollback passed;
+  rollback restored all **56 fixture file hashes**.
+- The actual published **1.9.6 installer**, verified against GitHub's SHA-256,
+  created a separate upgrade fixture. An injected failed upgrade restored all
+  **45 previous-installation hashes**. The successful upgrade preserved all
+  **8 configuration hashes** and **4 existing state hashes**. Eight runtime checks
+  confirmed custom triggers, legacy and unified spelling preferences, kept words,
+  style overrides, custom shortcuts and disabled automatic italics. Loading the
+  upgraded runtime did not rewrite existing configuration.
+- Source-level setup rollback passed **25 checks** in PowerShell 7 and another
+  **25** in Windows PowerShell 5.1. These tests use disposable `out/` folders;
+  neither installation testing nor release building changes the live profile,
+  starts the resident or registers startup.
+- All **17 engine benchmarks**, with 301 warm samples each, passed their budgets.
+  Highest warm p95 was **4.490 ms**; initialization was **219.880 ms**. These are
+  engine measurements, not complete editor-response timings.
+- Earlier user-led scratch checks confirmed modern Word comments/replies,
+  Ctrl italics, faster word/passage conversion, retained selection, one-step undo
+  and conversion immediately after pasting, plus multiline Excel editing. The
+  final review-specific padded/delayed Word and rich-editor Backspace cases have
+  production-helper/model coverage; they were not physically rechecked for this
+  release. Results do not establish every editor or Office version.
+
+The installer is unsigned. Sign-in, sleep/wake, permanently hung providers and a
+separate user's physical installation remain outside the completed checks.
+Detailed evidence and boundaries are in
+[Development verification](DEVELOPMENT_VERIFICATION.md).
+
 ## KeyJaya 1.9.6 — 26 October 2026
 
 - All **44 isolated suites passed**. The full review run plus the final focused

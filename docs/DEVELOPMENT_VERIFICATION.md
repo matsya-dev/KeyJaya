@@ -900,3 +900,46 @@ Evidence is beneath `out/review-fixes`: `full44-results.json`,
 backup and final-verification records. Earlier reproduction output is beneath
 `out/reviews/checkpoint-da9c8df`. The engine report is under
 `out/benchmarks/run-31fedea549dd49129713434757ed3b0e`.
+
+## Authorized 1.9.7 release preparation — 27 October 2026
+
+After the four review fixes were committed as `dadf3a6`, the owner explicitly
+approved **“Build and publish 1.9.7.”** GitHub's existing main branch contained
+four README-only commits after 1.9.6. They were merged without discarding the
+owner's wording, alongside the new shortcut-checker and release-note links.
+Version, assembly and manifest identities were updated together. The reviewed
+source baseline was deliberately refreshed to 1.9.7; runtime data and factory
+configuration remain unchanged. The strict audit passed **1,717 checks**.
+
+The final 1.9.7 compiled app passed **19 probe checks**. The installer contains
+the exact verified payload ZIP; all **38 package file hashes** match. A disposable
+clean installation and edited-trigger upgrade passed. An injected post-swap
+failure restored all **56 fixture file hashes**. Source-level setup checks passed
+**25 checks each** in PowerShell 7 and Windows PowerShell 5.1.
+
+The actual published 1.9.6 installer was verified against GitHub's SHA-256
+`abac503d7de53ddfcde63a3118cf853d55a9c748bd85cefccf497c8d76f47160`
+before it was executed in a separate disposable fixture. A deliberately failed
+upgrade to 1.9.7 restored all **45 old-installation file hashes**. The successful
+upgrade preserved **8 configuration hashes** and **4 existing state hashes**;
+**8 runtime checks** confirmed custom triggers, legacy and unified spellings,
+kept words, style overrides, custom shortcuts and disabled automatic italics.
+Loading the new converter did not rewrite existing configuration.
+
+The reviewed functional full/focused results above remain applicable: the only
+subsequent production-code changes are version identities. The release also
+passed all **26 Python developer-tool tests**, **107 C# formatting checks**,
+**44 documentation links**, **4 image headers**, pinned dictionary-source checks
+and `git diff --check`. No working document, clipboard or foreground app was used
+for these installation checks, and the resident was not started.
+
+The unsigned installer is `KeyJaya-Setup-v1.9.7.exe`, **67,811,840 bytes**, SHA-256
+`bea7e18211fa947f803cf9e2bbbe03cbe8a615ed946bbb023d4d066ef5560e52`.
+The embedded payload hash is
+`5e386d4098a169f06a6adadeae36370c36d8b4c3817f7cf5622c8194cc97b9e4`.
+The installer and `SHA256SUMS.txt` are the intended release assets.
+
+Release evidence is beneath `out/release-1.9.7`, including artifact checks,
+published-installer metadata, previous-version upgrade/rollback results,
+PowerShell setup logs and live-profile preservation metadata. The verification
+tools installed only into disposable `out/verification` folders.

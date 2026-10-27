@@ -46,7 +46,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 | `out/app/engine/keyjaya-app.exe.config` | Required Framework/DPI configuration |
 | `out/app/KeyJaya-Uninstall.exe` | Uninstaller |
 | `out/payload.zip` | Installer input |
-| `out/KeyJaya-Setup-v1.9.6.exe` | Installable package |
+| `out/KeyJaya-Setup-v1.9.7.exe` | Installable package |
 
 The build copies runtime data, defaults, and KeyJaya's original MIT notice, compiles the
 app and uninstaller, then packages the installer. It never launches the resident, installs anything,
