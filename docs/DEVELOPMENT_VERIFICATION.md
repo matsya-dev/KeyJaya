@@ -943,3 +943,12 @@ Release evidence is beneath `out/release-1.9.7`, including artifact checks,
 published-installer metadata, previous-version upgrade/rollback results,
 PowerShell setup logs and live-profile preservation metadata. The verification
 tools installed only into disposable `out/verification` folders.
+
+The initial hosted Windows CI run exposed a test-helper encoding mismatch in
+`ShortcutSettingsTests`, after the earlier suites passed. Reproducing the run
+with UTF-8 console input failed before the correction. The disposable helper now
+matches production's explicit UTF-8 reader with BOM detection and UTF-8 output;
+the production helper already used that protocol. The corrected suite passed
+**44 checks each** under UTF-8 input in PowerShell 7 and Windows PowerShell 5.1.
+No production source or installer bytes changed for this test-only correction.
+The draft release is held for a successful complete hosted Windows matrix.

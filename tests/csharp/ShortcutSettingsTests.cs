@@ -3,6 +3,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -16,13 +17,22 @@ namespace KeyJaya
             // disposable child of this test executable handles this command.
             if (args.Length > 0 && args[0] == "--check-word-shortcuts")
             {
-                var request = new JavaScriptSerializer().Deserialize<Dictionary<string, string>>(Console.In.ReadToEnd());
+                // Match the production helper's explicit UTF-8 protocol. The
+                // hosted Windows console may supply a BOM that Console.In
+                // exposes as a JSON character instead of consuming it.
+                Dictionary<string, string> request;
+                using (var input = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8, true))
+                    request = new JavaScriptSerializer().Deserialize<Dictionary<string, string>>(input.ReadToEnd());
                 if (request["word"] == "F24")
                     Thread.Sleep(12000);
-                if (request["letter"] == "F23")
-                    Console.Write("invalid test report");
-                else
-                    Console.Write(new JavaScriptSerializer().Serialize(new WordShortcutReport { Status = "Isolated test helper", Complete = true, WindowsChecked = 1 }));
+                using (var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)))
+                {
+                    if (request["letter"] == "F23")
+                        output.Write("invalid test report");
+                    else
+                        output.Write(new JavaScriptSerializer().Serialize(new WordShortcutReport { Status = "Isolated test helper", Complete = true, WindowsChecked = 1 }));
+                }
+
                 return 0;
             }
 
