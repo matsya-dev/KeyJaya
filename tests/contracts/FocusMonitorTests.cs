@@ -49,9 +49,13 @@ namespace KeyJaya
         {
             if (mode == "exit")
                 return 23;
+            // Console.In retains a UTF-8 BOM on redirected input. The Process
+            // writer emits one on UTF-8 Windows hosts, so decode the private
+            // command pipe with BOM detection instead of losing its first command.
+            var input = new StreamReader(Console.OpenStandardInput(), Console.InputEncoding, true);
             if (mode == "silent")
             {
-                Console.ReadLine();
+                input.ReadLine();
                 return 0;
             }
 
@@ -62,7 +66,7 @@ namespace KeyJaya
                 output.Publish(output.Begin(), Notice());
                 output.Ready();
                 Console.Out.Flush();
-                Console.ReadLine();
+                input.ReadLine();
                 return 0;
             }
 
@@ -75,7 +79,7 @@ namespace KeyJaya
             {
                 Console.WriteLine(new string ('x', 5000));
                 Console.Out.Flush();
-                Console.ReadLine();
+                input.ReadLine();
                 return 0;
             }
 
@@ -88,7 +92,7 @@ namespace KeyJaya
             if (mode == "quiet")
             {
                 string request;
-                while ((request = Console.ReadLine()) != null)
+                while ((request = input.ReadLine()) != null)
                     if (request == "notice")
                     {
                         Console.WriteLine(encodedNotice);
@@ -101,7 +105,7 @@ namespace KeyJaya
             Console.WriteLine(encodedNotice);
             Console.Out.Flush();
             string command;
-            while ((command = Console.ReadLine()) != null)
+            while ((command = input.ReadLine()) != null)
                 if (command == "crash")
                     return 23;
             return 0;
@@ -388,6 +392,14 @@ namespace KeyJaya
                 recovery.CancelRecovery();
                 Thread.Sleep(400);
                 Check(recoveryStarts == 1 && Alive(quietPid), "healthy focus cancels a pending refresh without restarting the helper");
+                // Reproduce UTF-8 Windows pipe input on ANSI hosts too. The
+                // Process writer already emits its preamble when it has one.
+                if (quietChild.StandardInput.Encoding.GetPreamble().Length == 0)
+                {
+                    byte[] preamble = Encoding.UTF8.GetPreamble();
+                    quietChild.StandardInput.BaseStream.Write(preamble, 0, preamble.Length);
+                    quietChild.StandardInput.BaseStream.Flush();
+                }
                 recovery.RequestRecovery();
                 quietChild.StandardInput.WriteLine("notice");
                 Check(Until(() => Volatile.Read(ref recoveryNotices) == 1), "a fresh event can repair focus during the settling interval");

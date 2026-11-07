@@ -5,10 +5,12 @@
 The user authorized the release commit, `v1.9.10` tag, push and GitHub publication.
 Publication reuses the exact installer verified on 1 November. Initial preflight
 matched all **158 frozen release inputs**, the installer and checksum file.
-Fresh GitHub CI then exposed serializer startup inside the synthetic focus
-helper's event-settling interval. The fixture now prepares its metadata before
-announcing readiness, keeping cold test setup outside that interval. This is a
-test-only change; the application sources and verified installer remain unchanged.
+Fresh GitHub CI then exposed a private test-pipe encoding defect: `Console.In`
+retained the UTF-8 BOM emitted by the parent writer, so the synthetic helper
+ignored its first command. Preparing metadata before readiness alone did not
+resolve that failure. A forced-BOM regression reproduces it locally; the fixture
+now uses a BOM-aware reader. Both changes affect only the test helper; the
+application sources and verified installer remain unchanged.
 No rebuild, installed-app update or additional live editor test is involved.
 The installer SHA-256 is
 `6235bdf51bca8dd86fe954c3cf9a3c207df44a710ed97dbfacc09a2526eb1248`.
