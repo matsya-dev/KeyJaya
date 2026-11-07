@@ -66,6 +66,9 @@ namespace KeyJaya
                 return 0;
             }
 
+            // Prepare the synthetic event before readiness: cold serializer/JIT
+            // startup on a CI worker is not part of the settling-interval test.
+            string encodedNotice = new JavaScriptSerializer().Serialize(Notice());
             Console.WriteLine("ready");
             Console.Out.Flush();
             if (mode == "bad")
@@ -88,14 +91,14 @@ namespace KeyJaya
                 while ((request = Console.ReadLine()) != null)
                     if (request == "notice")
                     {
-                        Console.WriteLine(new JavaScriptSerializer().Serialize(Notice()));
+                        Console.WriteLine(encodedNotice);
                         Console.Out.Flush();
                     }
 
                 return 0;
             }
 
-            Console.WriteLine(new JavaScriptSerializer().Serialize(Notice()));
+            Console.WriteLine(encodedNotice);
             Console.Out.Flush();
             string command;
             while ((command = Console.ReadLine()) != null)
