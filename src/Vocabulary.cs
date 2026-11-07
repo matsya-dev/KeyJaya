@@ -31,6 +31,7 @@ namespace KeyJaya
             terms["shikha"] = "śikhā";
             terms["darshini"] = "darśinī";
             terms["saarartha"] = "sārārtha";
+            terms["devanagari"] = "devanāgarī";
             return terms;
         }
     }

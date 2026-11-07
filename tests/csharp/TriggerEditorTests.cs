@@ -51,6 +51,25 @@ namespace KeyJaya
             Check(Resident.ReferenceSurface(42, 42, "Rule could not be added", "#32770"), "resident message boxes also bypass conversion");
             Check(!Resident.ReferenceSurface(17, 42, "Word document", "OpusApp") && !Resident.ReferenceSurface(0, 42, "", ""), "other apps and missing owners are not treated as resident editors");
             Check(Resident.ReferenceSurface(17, 42, "KeyJaya cheat sheet", "WindowsForms10.Window"), "separate cheat-sheet process keeps its literal-input exception");
+            Func<string> blockedReader = () =>
+            {
+                throw new Exception("Same-process title/class reader must not run on the input hook");
+            };
+            Check(Resident.ObserveReferenceSurface(42, 42, blockedReader, blockedReader), "own dialogs remain literal without waiting on any UI property reader");
+            Check(Resident.ObserveReferenceSurface(42, 42, null, null), "own-process proof needs no caption/class provider");
+            int titleReads = 0, classReads = 0;
+            Check(!Resident.ObserveReferenceSurface(17, 42, () =>
+            {
+                titleReads++;
+                return "Word document";
+            }, blockedReader) && titleReads == 1 && classReads == 0, "other captions need no class query or UI wait");
+            Check(Resident.ObserveReferenceSurface(17, 42, () => "KeyJaya cheat sheet", () =>
+            {
+                classReads++;
+                return "WindowsForms10.Window";
+            }) && classReads == 1, "external cheat sheet retains its caption and class proof");
+            Check(!Resident.ObserveReferenceSurface(17, 42, () => "KeyJaya cheat sheet", () => "OpusApp"), "a matching foreign document caption is not the cheat sheet");
+            Check(!Resident.ObserveReferenceSurface(0, 42, () => "", blockedReader), "missing owner and caption do not invent a reference surface");
             string root = Path.GetFullPath(args[0]), path = Configuration.Short(root), factory = Path.Combine(root, "editor-test-defaults.yml");
             byte[] saved = File.ReadAllBytes(path);
             string original = "# Header stays exact.\r\nmatches:\r\n  - trigger: 'SP>'\r\n    replace: 'Śrīla Prabhupāda'\r\n    # Keep this comment.\r\n  - trigger: 'SP<'\r\n    replace: 'Çréla Prabhupäda'\r\n  - trigger: 'SP?'\r\n    replace: 'Srila Prabhupada'\r\n  # Unrelated entry/comment.\r\n  - trigger: ':signature'\r\n    replace: |-\r\n      Best wishes,\r\n      Reader # literal\r\n  - trigger: 'ZZ'\r\n    replace: 'Keep exact user text'\r\n";

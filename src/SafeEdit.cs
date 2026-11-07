@@ -30,6 +30,60 @@ namespace KeyJaya
                 Trace(message);
         }
 
+        internal static bool NativeAcrobatEdit(string image, string ownerClass, string fieldClass, bool ownedFocus, bool writable)
+        {
+            return ownedFocus && writable && fieldClass == "Edit" && (ownerClass == "AcrobatSDIWindow" || ownerClass == "AVL_AVWindow") && (string.Equals(image, "Acrobat.exe", StringComparison.OrdinalIgnoreCase) || string.Equals(image, "AcroRd32.exe", StringComparison.OrdinalIgnoreCase));
+        }
+
+        static bool NativeAcrobatEdit(IntPtr window, AutomationElement focus)
+        {
+            if (window == IntPtr.Zero || window != Native.GetForegroundWindow() || focus == null)
+                return false;
+            var ownerClass = new StringBuilder(128);
+            Native.GetClassName(window, ownerClass, ownerClass.Capacity);
+            if (ownerClass.ToString() != "AcrobatSDIWindow" && ownerClass.ToString() != "AVL_AVWindow")
+                return false;
+            uint ownerProcess, fieldProcess;
+            Native.GetWindowThreadProcessId(window, out ownerProcess);
+            string image = Native.ProcessImageIs(ownerProcess, "Acrobat.exe") ? "Acrobat.exe" : Native.ProcessImageIs(ownerProcess, "AcroRd32.exe") ? "AcroRd32.exe" : null;
+            if (image == null)
+                return false;
+            IntPtr handle = new IntPtr(focus.Current.NativeWindowHandle);
+            var fieldClass = new StringBuilder(128);
+            Native.GetClassName(handle, fieldClass, fieldClass.Capacity);
+            Native.GetWindowThreadProcessId(handle, out fieldProcess);
+            int[] identity = Native.FocusIdentity();
+            IntPtr nativeFocus = identity == null ? IntPtr.Zero : new IntPtr((uint)identity[4] | ((long)identity[5] << 32));
+            bool owned = handle != IntPtr.Zero && handle == nativeFocus && Native.GetAncestor(handle, 2) == window && ownerProcess != 0 && ownerProcess == fieldProcess && focus.Current.ProcessId == (int)ownerProcess;
+            int style = Native.EditStyle(handle, -16);
+            bool writable = focus.Current.IsEnabled && !focus.Current.IsPassword && (style & (0x800 | 0x20)) == 0;
+            return NativeAcrobatEdit(image, ownerClass.ToString(), fieldClass.ToString(), owned, writable);
+        }
+
+        internal static object TextProvider(bool nativeEdit, Func<object> accessible)
+        {
+            // Acrobat can advertise TextPattern yet return an empty range for a
+            // nonempty Find/Advanced Search Edit. Do not consult that provider;
+            // all discovery paths must agree on the verified native coordinates.
+            return nativeEdit ? null : accessible();
+        }
+
+        static bool TryTextPattern(IntPtr window, AutomationElement focus, out object provider)
+        {
+            bool search = WordSearchField.NativeFocused(window);
+            if (search && !WordSearchField.Focused(window, focus))
+                throw new InvalidOperationException("Word query focus unavailable");
+            bool native = search || NativeAcrobatEdit(window, focus);
+            if (native)
+                Detail(search ? "Word verified native query provider" : "Acrobat verified native Edit provider");
+            provider = TextProvider(native, () =>
+            {
+                object value;
+                return focus.TryGetCurrentPattern(TextPattern.Pattern, out value) ? value : null;
+            });
+            return provider != null;
+        }
+
         public sealed class CaretTarget
         {
             public readonly string Text, Font;
@@ -530,7 +584,7 @@ namespace KeyJaya
                 }
 
                 object provider;
-                if (focus.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+                if (TryTextPattern(window, focus, out provider))
                 {
                     TextPattern pattern = (TextPattern)provider;
                     var selected = pattern.GetSelection();
@@ -680,7 +734,7 @@ namespace KeyJaya
                 if (focus == null)
                     return null;
                 object obj;
-                if (focus.TryGetCurrentPattern(TextPattern.Pattern, out obj))
+                if (TryTextPattern(window, focus, out obj))
                 {
                     var selected = ((TextPattern)obj).GetSelection();
                     if (selected.Length != 1 || selected[0].CompareEndpoints(TextPatternRangeEndpoint.Start, selected[0], TextPatternRangeEndpoint.End) != 0)
@@ -760,6 +814,14 @@ namespace KeyJaya
         }
 
         WordSelection.OwnedTextAnchor wordLetter;
+        internal bool HasNativeWordLetter
+        {
+            get
+            {
+                return SingleLetter && wordLetter != null;
+            }
+        }
+
         readonly bool inDesignField;
         public bool IsInDesignField
         {
@@ -767,6 +829,12 @@ namespace KeyJaya
             {
                 return inDesignField;
             }
+        }
+
+        readonly bool wordSearch;
+        internal bool AllowsOutput(string text)
+        {
+            return !wordSearch || WordSearchField.Output(text);
         }
 
         SafeEdit(IntPtr window, TextPatternRange r, string text, TextPattern provider = null, bool singleLetter = false)
@@ -777,7 +845,8 @@ namespace KeyJaya
             expected = text;
             pattern = provider;
             inDesignField = InDesignSelection.FieldFocused(window);
-            if (singleLetter)
+            wordSearch = WordSearchField.NativeFocused(window);
+            if (singleLetter && !wordSearch)
                 wordLetter = WordSelection.OwnedTextAnchor.Capture(window, text);
         }
 
@@ -799,7 +868,7 @@ namespace KeyJaya
                 if (focus == null)
                     return null;
                 object provider;
-                if (focus.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+                if (TryTextPattern(window, focus, out provider))
                 {
                     var text = (TextPattern)provider;
                     var selection = text.GetSelection();
@@ -895,7 +964,7 @@ namespace KeyJaya
                 if (focus == null)
                     return null;
                 object provider;
-                if (focus.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+                if (TryTextPattern(window, focus, out provider))
                 {
                     TextPattern pattern = (TextPattern)provider;
                     var selected = pattern.GetSelection();
@@ -1093,6 +1162,8 @@ namespace KeyJaya
                 return "plain";
             }
 
+            if (wordSearch && settings.Mode == "auto")
+                return "unicode";
             if (settings.Mode == "auto" && userSelection && WordPasteOptions.IsWord(Window))
             {
                 string nativeFont = WordSelection.SelectedFontName(Window, expected);
@@ -1364,7 +1435,7 @@ namespace KeyJaya
                 if (focus == null)
                     return null;
                 object obj;
-                if (!focus.TryGetCurrentPattern(TextPattern.Pattern, out obj))
+                if (!TryTextPattern(window, focus, out obj))
                     return NativeEdit(window, focus, expected, singleLetter, allowCase);
                 TextPattern pattern = (TextPattern)obj;
                 TextPatternRange[] selected = pattern.GetSelection();
@@ -1469,7 +1540,7 @@ namespace KeyJaya
         Func<bool> editContext;
         bool SameTarget()
         {
-            return Window == Native.GetForegroundWindow() && (excelCell != null ? excelCell.Current : inDesign != null || SameFocus());
+            return Window == Native.GetForegroundWindow() && (!wordSearch || WordSearchField.FocusedElement(Window) != null) && (excelCell != null ? excelCell.Current : inDesign != null || SameFocus());
         }
 
         string NativeText()
@@ -2349,7 +2420,9 @@ namespace KeyJaya
                 return context() && (findField.Matches(false) || findField.Select()) && context();
             if (inDesign != null)
                 return context() && (inDesign.Matches(false) || inDesign.Select()) && context();
-            return SelectionCommit.Prepare(this, context, null, keyboardFirst && (SingleLetter || CaretWords.NavigationCount(expected) > 0));
+            if (wordLetter != null)
+                return SelectionCommit.PrepareNative(context, wordLetter.Select, wordLetter.Restore);
+            return SelectionCommit.Prepare(this, context, null, keyboardFirst && (SingleLetter || CaretWords.NavigationCount(expected) > 0), userSelection);
         }
 
         public bool ReadyForPaste()
@@ -2390,60 +2463,97 @@ namespace KeyJaya
             return WordPasteGuard.Owned(name.ToString(), process, focus.Current.ProcessId);
         }
 
+        // Query controls and modern comments own text outside Word.Selection.
+        // DocumentFocused deliberately remains restricted to native stories.
+        internal static bool TextFieldFocused(IntPtr owner)
+        {
+            return WordSearchField.NativeFocused(owner) || WordCommentFocus.IsCommentFocus(owner);
+        }
+
         public static bool DocumentFocused(IntPtr owner)
         {
             try
             {
-                if (!IsWord(owner))
+                if (!IsWord(owner) || owner != Owner(Native.GetForegroundWindow()))
                     return false;
                 bool modern;
                 var focus = WordCommentFocus.Focused(owner, out modern);
                 if (modern)
-                    return WordCommentFocus.Editable(focus);
-                if (!Owned(owner, focus))
+                    return WordCommentFocus.Editable(focus) && owner == Owner(Native.GetForegroundWindow());
+                if (focus == null)
                     return false;
-                int process = focus.Current.ProcessId;
-                // Word may focus an Edit/Text child instead of the Body document itself.
-                for (int i = 0; i < 12 && focus != null; i++)
+                uint process;
+                Native.GetWindowThreadProcessId(owner, out process);
+                if (process == 0)
+                    return false;
+                // Fetch each ancestry node's identity together, once per call.
+                // The cache is local to this check, never permission for a later edit.
+                var request = new CacheRequest
                 {
-                    if (focus.Current.ProcessId != process)
-                        return false;
-                    var type = focus.Current.ControlType;
-                    bool menu = type == ControlType.Menu || type == ControlType.MenuItem;
-                    if (menu)
-                        return false;
-                    if (WordPasteGuard.DocumentNode(focus.Current.AutomationId, type == ControlType.Document, menu))
-                        return true;
+                    TreeScope = TreeScope.Element
+                };
+                request.Add(AutomationElement.ProcessIdProperty);
+                request.Add(AutomationElement.ControlTypeProperty);
+                request.Add(AutomationElement.AutomationIdProperty);
+                request.Add(AutomationElement.NativeWindowHandleProperty);
+                bool document = DocumentPath(focus.GetUpdatedCache(request), (int)process, node =>
+                {
+                    var info = node.Cached;
+                    return new DocumentNode
+                    {
+                        Process = info.ProcessId,
+                        Type = info.ControlType,
+                        Id = info.AutomationId,
+                        Handle = new IntPtr(info.NativeWindowHandle)
+                    };
+                }, node => TreeWalker.ControlViewWalker.GetParent(node, request), (node, info) =>
+                {
                     // Classic comment/reply panes expose an Edit on a native
                     // _WwG window, with neither Body ID nor Document ancestor.
                     // Require that exact Word-owned editor and a writable text
                     // selection; ribbon/search fields must still be rejected.
-                    if (type == ControlType.Edit)
-                    {
-                        IntPtr handle = new IntPtr(focus.Current.NativeWindowHandle);
-                        uint nativeProcess;
-                        Native.GetWindowThreadProcessId(handle, out nativeProcess);
-                        var name = new StringBuilder(64);
-                        Native.GetClassName(handle, name, name.Capacity);
-                        object provider;
-                        if (handle != IntPtr.Zero && nativeProcess == (uint)process && name.ToString() == "_WwG" && focus.TryGetCurrentPattern(TextPattern.Pattern, out provider))
-                        {
-                            var selected = ((TextPattern)provider).GetSelection();
-                            bool editable = selected.Length == 1 && object.Equals(selected[0].GetAttributeValue(TextPattern.IsReadOnlyAttribute), false);
-                            if (WordPasteGuard.DocumentNode(focus.Current.AutomationId, false, false, name.ToString(), editable))
-                                return true;
-                        }
-                    }
-
-                    focus = TreeWalker.ControlViewWalker.GetParent(focus);
-                }
-
-                return false;
+                    uint nativeProcess;
+                    Native.GetWindowThreadProcessId(info.Handle, out nativeProcess);
+                    var name = new StringBuilder(64);
+                    Native.GetClassName(info.Handle, name, name.Capacity);
+                    object provider;
+                    if (info.Handle == IntPtr.Zero || nativeProcess != process || name.ToString() != "_WwG" || !node.TryGetCurrentPattern(TextPattern.Pattern, out provider))
+                        return false;
+                    var selected = ((TextPattern)provider).GetSelection();
+                    return selected.Length == 1 && object.Equals(selected[0].GetAttributeValue(TextPattern.IsReadOnlyAttribute), false);
+                });
+                return document && owner == Owner(Native.GetForegroundWindow());
             }
             catch (Exception)
             {
                 return false;
             }
+        }
+
+        internal sealed class DocumentNode
+        {
+            internal int Process;
+            internal ControlType Type;
+            internal string Id;
+            internal IntPtr Handle;
+        }
+
+        internal static bool DocumentPath<T>(T focus, int process, Func<T, DocumentNode> read, Func<T, T> parent, Func<T, DocumentNode, bool> classicEditor)
+            where T : class
+        {
+            // Word may focus an Edit/Text child of Body, or a classic comment.
+            for (int i = 0; i < 12 && focus != null; i++, focus = parent(focus))
+            {
+                var info = read(focus);
+                if (process == 0 || info.Process != process || info.Type == ControlType.Menu || info.Type == ControlType.MenuItem)
+                    return false;
+                if (WordPasteGuard.DocumentNode(info.Id, info.Type == ControlType.Document, false))
+                    return true;
+                if (info.Type == ControlType.Edit && classicEditor(focus, info))
+                    return true;
+            }
+
+            return false;
         }
 
         public static bool FocusedMenu(IntPtr owner)
@@ -2454,13 +2564,18 @@ namespace KeyJaya
                     return false;
                 var focus = EmbeddedWebViewFocus.Focused(owner);
                 if (Owned(owner, focus))
-                    for (int i = 0; i < 10 && focus != null; i++)
+                    if (WordPasteGuard.MenuPath(focus, node =>
                     {
-                        if (WordPasteGuard.Label(focus.Current.Name))
-                            return true;
-                        focus = TreeWalker.ControlViewWalker.GetParent(focus);
-                    }
-
+                        var request = new CacheRequest
+                        {
+                            TreeScope = TreeScope.Element
+                        };
+                        request.Add(AutomationElement.AutomationIdProperty);
+                        request.Add(AutomationElement.ControlTypeProperty);
+                        var info = node.GetUpdatedCache(request).Cached;
+                        return WordPasteGuard.DocumentNode(info.AutomationId, info.ControlType == ControlType.Document, info.ControlType == ControlType.Menu || info.ControlType == ControlType.MenuItem);
+                    }, node => node.Current.Name, node => TreeWalker.ControlViewWalker.GetParent(node)))
+                        return true;
                 // Office can leave UIA focus in Body while a separate native paste popup owns input.
                 uint process;
                 uint thread = Native.GetWindowThreadProcessId(owner, out process);

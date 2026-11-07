@@ -56,7 +56,7 @@ foreach ($name in $names) {
 
     $runner = Join-Path $output ($name + '.exe')
     $compilerArguments = @(
-        '/nologo', '/optimize+', '/platform:x64', '/codepage:65001',
+        '/nologo', '/optimize+', '/platform:x64', '/codepage:65001', '/langversion:5',
         '/r:System.Web.Extensions.dll'
     ) + $references + @(
         ('/main:KeyJaya.' + $name)
@@ -68,12 +68,27 @@ foreach ($name in $names) {
     if ($name -eq 'WordSnapshotTests') {
         $compilerArguments += Join-Path $root 'tests/contracts/WordApplicationTests.cs'
         $compilerArguments += Join-Path $root 'tests/contracts/WordCommentFocusTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/ModernWordSetupTests.cs'
+        $compilerArguments += Join-Path $root 'tests/integration/ModernWordSetup.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/FocusMonitorTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/InputHookThreadTests.cs'
         $compilerArguments += Join-Path $root 'tests/contracts/WordNavigationTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordSearchFieldTests.cs'
         $compilerArguments += Join-Path $root 'tests/contracts/WordTransactionReuseTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordNativeTimingTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordRevisionEnumerationTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordRevisionBatchTests.cs'
         $compilerArguments += Join-Path $root 'tests/contracts/WordFormattingCycleTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordPerformanceContracts.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/WordBatchingTests.cs'
+        $compilerArguments += Join-Path $root 'tests/integration/WordPerformanceSupport.cs'
     }
     if ($name -eq 'ExcelCellTests') {
         $compilerArguments += Join-Path $root 'tests/contracts/ExcelTransactionTests.cs'
+    }
+    if ($name -eq 'NativeKeyTests') {
+        $compilerArguments += Join-Path $root 'tests/contracts/NativeEditTests.cs'
+        $compilerArguments += Join-Path $root 'tests/contracts/ClipboardSnapshotTests.cs'
     }
     if ($name -eq 'ShortcutSettingsTests') {
         $compilerArguments += Join-Path $root 'tests/contracts/WordShortcutTests.cs'
@@ -96,6 +111,7 @@ foreach ($name in $names) {
     if ($name -eq 'ScriptFeaturesTests') { $extra = @((Join-Path $inputs 'script-reference-passages.tsv')) }
     if ($name -eq 'ToggleTests') { $extra = @((Join-Path $inputs 'contraction-keys.txt')) }
     if ($name -eq 'SelectionTests') { $extra = @((Join-Path $inputs 'editor-contracts.json')) }
+    if ($name -eq 'WordSnapshotTests') { $extra = @((Join-Path $inputs 'word-performance.json')) }
 
     $result = & $runner $fixture @extra 2>&1
     $exitCode = $LASTEXITCODE

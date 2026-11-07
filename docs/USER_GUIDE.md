@@ -396,7 +396,7 @@ These editing areas have been exercised during development:
 | Zen/browser editors, ChatGPT, WhatsApp | Editable plain-text and rich-text fields |
 | Obsidian | Writable Markdown, including Live Preview |
 | Microsoft Excel | Cells in edit mode with a visible text caret, including word/letter conversion and selected passages across lines; keep **View → Formula Bar** enabled |
-| Adobe Acrobat | Sticky-note comments, replies, and text-box comments |
+| Adobe Acrobat | Sticky-note comments, replies, and text-box comments; development builds also support caret conversion in Ctrl+F Find and Advanced Search query fields |
 
 In Excel, selected passages can span line breaks and remain selected after
 conversion. Emoji and combining accents elsewhere in a cell no longer block a
@@ -407,6 +407,13 @@ excluded.
 
 Word comments inherit the comment field's current formatting; KeyJaya does not
 add automatic italics there.
+
+The development trial also supports the docked **Ctrl+F Navigation search box**:
+convert a word or selection, cycle spellings, and use backtick and conversion
+undo directly in the query. The query stays plain text; Auto uses Unicode and
+explicit encoding overrides remain available. Multiline/control-character
+expansions are skipped. This changes the query rather than document text and is
+not included in installed release 1.9.8.
 
 App versions and controls can behave differently; custom, protected, or elevated
 editors may not support conversion. Physical installation on a separate user's

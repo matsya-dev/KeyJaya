@@ -12,7 +12,7 @@ namespace KeyJaya
 {
     public static class Version
     {
-        public const string Current = "1.9.7";
+        public const string Current = "1.9.10";
     }
 
     public static class EncodingMap
@@ -183,7 +183,7 @@ namespace KeyJaya
         readonly ulong[] guard;
         readonly IndexedStore lexicon, scripture, cycles, corrections;
         readonly Lazy<IndexedStore> hindiDictionary, sanskritMorphology;
-        public static readonly HashSet<string> IndicLoanwords = new HashSet<string>(new[] { "ahimsa", "atman", "chandra", "guru", "chatra", "jagannath", "hanuman", "ayurveda", "sakti", "shakti", "varuna", "sruti", "maharani", "devi", "siva", "shiva", "varna", "puja", "mathura", "brahmin", "brahmins", "pandit", "pundit", "pooja", "poornima", "shreela", "shree", "raj", "niti", "saiva" }, StringComparer.OrdinalIgnoreCase);
+        public static readonly HashSet<string> IndicLoanwords = new HashSet<string>(new[] { "ahimsa", "atman", "chandra", "guru", "chatra", "jagannath", "hanuman", "ayurveda", "sakti", "shakti", "varuna", "sruti", "maharani", "devi", "siva", "shiva", "varna", "puja", "mathura", "brahmin", "brahmins", "pandit", "pundit", "pooja", "poornima", "shreela", "shree", "raj", "niti", "saiva", "devanagari" }, StringComparer.OrdinalIgnoreCase);
         // Recognized Indic terms may use explicit suffix conversion; automatic English prose remains guarded.
         public static readonly HashSet<string> ExplicitIndicTriggers = new HashSet<string>(new[] { "prana", "kshatriya", "brahmani", "godavari", "varanasi", "dharana", "lakshmi", "mandala", "mantra", "mantras", "mathura", "saraswati", "sarasvati", "shiva", "siva", "upanishad", "upanisad", "purana", "yoga", "yogi", "asana", "pranayama", "tantra", "dharma", "karma", "samsara", "samadhi", "nirvana", "moksha", "bhakti", "vedanta", "veda", "vedas", "avatar", "avatara", "brahma", "vishnu", "visnu", "rama", "ramayana", "mahabharata", "gita", "ganesha", "ganesa", "ganesh", "kali", "sannyasi", "sannyasin", "brahman", "brahmana", "pandit", "pundit", "kirtan", "kirtana", "puja", "pujari", "acharya", "acarya", "vaishnava", "vaisnava", "shastra", "sastra", "shudra", "sudra", "rishi", "rsi", "hari", "radha", "vrindavan", "vrindavana", "caitanya", "chaitanya", "purusha", "sankara", "shankara", "sankhya", "narmada", "parvati", "lingam", "nagari", "prajna", "sadhu", "sadhus", "shakta", "varuna", "kaveri", "yamuna", "gatha", "sakha", "surya", "varna", "yogis", "kama", "sita", "sati", "agama", "asoka", "brahmi", "devi", "dhyana", "durga", "ganesa", "raj", "niti", "saiva", "himalaya", "himalayas", "kalidasa", "kamala", "lanka", "mahatma", "mahatmas", "mahavira", "mudra", "nyaya", "om", "raga", "samhita", "siddhartha", "sruti", "tripura", "yogini", "annapurna", "dhoti", "dhotis", "jataka", "karttikeya", "mimamsa", "nyasa", "ramachandra", "upanishads", "vaisya" }, StringComparer.OrdinalIgnoreCase);
         static readonly Regex Words = new Regex(@"[\p{L}\p{M}]+(?:['’]s)?", RegexOptions.Compiled);

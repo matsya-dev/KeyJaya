@@ -341,6 +341,52 @@ namespace KeyJaya
             Editor untouchedSelection = new Editor("it ", "didnt ", "later");
             untouchedSelection.Start = untouchedSelection.OwnedStart;
             Check(!SelectionCommit.Prepare(untouchedSelection, () => untouchedSelection.Context, untouchedSelection.Wait) && untouchedSelection.Start == untouchedSelection.OwnedStart && untouchedSelection.End == untouchedSelection.OwnedEnd && untouchedSelection.Recoveries == 0, "initial user selection is never changed by cancellation");
+            Check(SelectionCommit.Prepare(untouchedSelection, () => untouchedSelection.Context, untouchedSelection.Wait, false, true), "explicitly captured one-word selection reaches the conversion transaction");
+            Check(untouchedSelection.RangeRequests == 0 && untouchedSelection.KeyboardRequests == 0 && untouchedSelection.Recoveries == 0, "captured selection needs no caret movement or recovery");
+            Check(untouchedSelection.Replace("kṛṣṇa"), "captured word can be replaced after exact selection proof");
+            var staleSelection = new Editor("before ", "krsna", " after");
+            staleSelection.Start = 0;
+            staleSelection.End = 6;
+            Check(!SelectionCommit.Prepare(staleSelection, () => true, staleSelection.Wait, false, true) && staleSelection.RangeRequests == 0 && staleSelection.KeyboardRequests == 0, "neighbor selection is not navigated or replaced");
+            staleSelection.Start = staleSelection.OwnedStart;
+            staleSelection.End = staleSelection.OwnedEnd;
+            int contextChecks = 0;
+            Check(!SelectionCommit.Prepare(staleSelection, () => ++contextChecks == 1, staleSelection.Wait, false, true), "focus/generation loss after exact selection proof still aborts");
+            int nativeSelections = 0, nativeRestores = 0;
+            Check(SelectionCommit.PrepareNative(() => true, () =>
+            {
+                nativeSelections++;
+                return true;
+            }, () =>
+            {
+                nativeRestores++;
+                return true;
+            }), "verified native selection can complete in one transaction");
+            Check(nativeSelections == 1 && nativeRestores == 0, "native preparation does not duplicate caret/selection transactions");
+            Check(!SelectionCommit.PrepareNative(() => false, () =>
+            {
+                nativeSelections++;
+                return true;
+            }, () =>
+            {
+                nativeRestores++;
+                return true;
+            }) && nativeSelections == 1, "stale native request cannot select");
+            Check(!SelectionCommit.PrepareNative(() => true, () => false, () =>
+            {
+                nativeRestores++;
+                return true;
+            }) && nativeRestores == 1, "failed native selection restores only its owned context");
+            bool nativeContext = true;
+            Check(!SelectionCommit.PrepareNative(() => nativeContext, () =>
+            {
+                nativeContext = false;
+                return true;
+            }, () =>
+            {
+                nativeRestores++;
+                return true;
+            }) && nativeRestores == 1, "focus loss after native selection cannot restore into a different field");
             CorrectionQueue queue = new CorrectionQueue();
             string pending;
             IntPtr field = new IntPtr(123);

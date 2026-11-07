@@ -21,13 +21,15 @@ namespace KeyJaya
 
         static object Invoke(object obj, string name, BindingFlags kind, object[] args)
         {
-            var watch = Trace == null ? null : System.Diagnostics.Stopwatch.StartNew();
+            var watch = Trace == null && !WordNativeTiming.Active ? null : System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 return obj.GetType().InvokeMember(name, kind, null, obj, args);
             }
             finally
             {
+                if (watch != null)
+                    WordNativeTiming.Record(name, kind, watch.ElapsedTicks);
                 if (watch != null && watch.ElapsedMilliseconds >= 50)
                     Detail("slow call=" + name + " kind=" + kind + " ms=" + watch.ElapsedMilliseconds);
             }
@@ -58,7 +60,12 @@ namespace KeyJaya
             try
             {
                 if (value != null && Marshal.IsComObject(value))
-                    Marshal.ReleaseComObject(value);
+                {
+                    if (WordNativeTiming.Active)
+                        WordNativeTiming.Release(() => Marshal.ReleaseComObject(value));
+                    else
+                        Marshal.ReleaseComObject(value);
+                }
             }
             catch (Exception)
             {
@@ -342,6 +349,47 @@ namespace KeyJaya
             }
         }
 
+        static void RevisionBatches(System.Runtime.InteropServices.ComTypes.IEnumVARIANT iterator, int count, List<object> result)
+        {
+            int size = Math.Min(32, count + 1);
+            var batch = new object[size];
+            IntPtr fetched = Marshal.AllocHGlobal(sizeof(int));
+            try
+            {
+                while (true)
+                {
+                    Marshal.WriteInt32(fetched, -1);
+                    int status = WordNativeTiming.Active ? WordNativeTiming.Measure("Revision.Next", () => iterator.Next(size, batch, fetched)) : iterator.Next(size, batch, fetched);
+                    if (status < 0)
+                        Marshal.ThrowExceptionForHR(status);
+                    int actual = Marshal.ReadInt32(fetched);
+                    if (status != 0 && status != 1 || actual < 0 || actual > size || status == 0 && actual != size || status == 1 && actual == size)
+                        throw new InvalidOperationException("Revision batch unavailable");
+                    for (int n = actual; n < size; n++)
+                        if (batch[n] != null)
+                            throw new InvalidOperationException("Unexpected revision batch item");
+                    for (int n = 0; n < actual; n++)
+                    {
+                        if (batch[n] == null)
+                            throw new InvalidOperationException("Missing revision batch item");
+                        result.Add(batch[n]);
+                        batch[n] = null;
+                        if (result.Count > 10000)
+                            throw new InvalidOperationException("Revision enumeration limit exceeded");
+                    }
+
+                    if (status == 1)
+                        return;
+                }
+            }
+            finally
+            {
+                foreach (object item in batch)
+                    Free(item);
+                Marshal.FreeHGlobal(fetched);
+            }
+        }
+
         static object[] RevisionItems(object revisions, int count)
         {
             if (count == 0)
@@ -351,10 +399,23 @@ namespace KeyJaya
             try
             {
                 enumerator = Get(revisions, "_NewEnum");
-                var managed = enumerator as System.Collections.IEnumerator;
-                if (managed != null)
+                var iterator = enumerator as System.Runtime.InteropServices.ComTypes.IEnumVARIANT;
+                if (iterator == null)
                 {
-                    while (managed.MoveNext())
+                    // The Framework bridges COM enumerators to IEnumerator.
+                    // Its public adapter lends the same underlying iterator;
+                    // keep its owner alive and never release that alias twice.
+                    var adapter = enumerator as ICustomAdapter;
+                    if (adapter != null)
+                        iterator = adapter.GetUnderlyingObject() as System.Runtime.InteropServices.ComTypes.IEnumVARIANT;
+                }
+
+                var managed = enumerator as System.Collections.IEnumerator;
+                if (iterator != null)
+                    RevisionBatches(iterator, count, result);
+                else if (managed != null)
+                {
+                    while (WordNativeTiming.Active ? WordNativeTiming.Measure("Revision.MoveNext", managed.MoveNext) : managed.MoveNext())
                     {
                         result.Add(managed.Current);
                         if (result.Count > 10000)
@@ -363,15 +424,7 @@ namespace KeyJaya
                 }
                 else
                 {
-                    var iterator = (System.Runtime.InteropServices.ComTypes.IEnumVARIANT)enumerator;
-                    object[] slot = new object[1];
-                    while (iterator.Next(1, slot, IntPtr.Zero) == 0)
-                    {
-                        result.Add(slot[0]);
-                        slot[0] = null;
-                        if (result.Count > 10000)
-                            throw new InvalidOperationException("Revision enumeration limit exceeded");
-                    }
+                    throw new InvalidOperationException("Revision enumeration unavailable");
                 }
 
                 return result.ToArray();
@@ -384,6 +437,7 @@ namespace KeyJaya
             }
             finally
             {
+                GC.KeepAlive(enumerator);
                 Free(enumerator);
             }
         }
@@ -397,7 +451,7 @@ namespace KeyJaya
                 int start = Convert.ToInt32(Get(range, "Start")), end = Convert.ToInt32(Get(range, "End"));
                 revisions = Get(range, "Revisions");
                 int count = Convert.ToInt32(Get(revisions, "Count"));
-                if (count > 10000)
+                if (count < 0 || count > 10000)
                     return null;
                 var a = new List<int>();
                 var b = new List<int>();
@@ -439,7 +493,7 @@ namespace KeyJaya
             object app = null, window = null, selection = null, scope = null, font = null;
             try
             {
-                if (!WordPasteOptions.IsWord(owner) || owner != Native.GetForegroundWindow())
+                if (!WordPasteOptions.IsWord(owner) || owner != Native.GetForegroundWindow() || WordSearchField.NativeFocused(owner))
                     return null;
                 app = WordApplication.ForWindow(owner);
                 if (app == null)
@@ -610,7 +664,7 @@ namespace KeyJaya
                 object app = null, selection = null, scope = null, document = null, font = null, tail = null;
                 try
                 {
-                    if (!WordPasteOptions.IsWord(owner) || owner != Native.GetForegroundWindow())
+                    if (!WordPasteOptions.IsWord(owner) || owner != Native.GetForegroundWindow() || WordSearchField.NativeFocused(owner))
                         return null;
                     app = WordApplication.ForWindow(owner);
                     if (app == null || !OwnedTextAnchor.Foreground(app, owner))
@@ -864,7 +918,7 @@ namespace KeyJaya
 
             public static OwnedTextAnchor Capture(IntPtr owner, string expected, bool singleLetter = true)
             {
-                if (!WordPasteOptions.IsWord(owner) || string.IsNullOrEmpty(expected) || expected.Length > 160 || expected.IndexOfAny(new[] { '\0', '\a' }) >= 0 || singleLetter && !SingleLetters.Supported(expected))
+                if (!WordPasteOptions.IsWord(owner) || WordSearchField.NativeFocused(owner) || string.IsNullOrEmpty(expected) || expected.Length > 160 || expected.IndexOfAny(new[] { '\0', '\a' }) >= 0 || singleLetter && !SingleLetters.Supported(expected))
                     return null;
                 object app = null, selection = null, document = null, scope = null, letter = null;
                 try
@@ -907,6 +961,8 @@ namespace KeyJaya
 
             bool Check(bool caret, bool select = false, bool restore = false)
             {
+                if (WordSearchField.NativeFocused(owner))
+                    return false;
                 object app = null, selection = null, document = null, scope = null, letter = null;
                 try
                 {
@@ -993,7 +1049,10 @@ namespace KeyJaya
                     throw new InvalidOperationException("Patch crosses an existing deletion");
                 int begin = patch.Length == 0 ? map.NativeOffset(patch.Offset) : bounds[0][0], end = patch.Length == 0 ? begin : bounds[0][1];
                 part = Range(story, begin, end);
-                if (patch.After.Length > 0 && (patch.Length != 1 || patch.After.Length != 1))
+                // Word can substitute a different font for an inserted
+                // diacritic even in a one-letter edit of a named style.
+                // Reapply the captured font for every nonempty replacement.
+                if (patch.After.Length > 0)
                 {
                     int anchor = Math.Min(patch.Offset, Math.Max(0, map.Value.Length - 1));
                     int native = map.NativeOffset(anchor);
@@ -1022,6 +1081,256 @@ namespace KeyJaya
                 Free(sourceFont);
                 Free(style);
                 Free(part);
+            }
+        }
+
+        static bool LatinLetter(char value)
+        {
+            return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z' || char.IsLetter(value) && (value >= '\u00c0' && value <= '\u024f' || value >= '\u1e00' && value <= '\u1eff');
+        }
+
+        static bool BatchLetter(TextPatch patch)
+        {
+            return patch != null && patch.Before.Length == 1 && patch.After.Length == 1 && patch.Before != patch.After && LatinLetter(patch.Before[0]) && LatinLetter(patch.After[0]);
+        }
+
+        internal static int AdjacentPatches(TextPatch[] patches, int index)
+        {
+            int count = 1;
+            if (!BatchLetter(patches[index]))
+                return count;
+            while (count < 32 && index + count < patches.Length && BatchLetter(patches[index + count]) && patches[index + count].Offset == patches[index + count - 1].Offset - 1)
+                count++;
+            return count;
+        }
+
+        // A short range export is a per-edit formatting/structure proof, not a
+        // reusable permission. Unknown content keeps the existing letter edits.
+        internal static bool PlainRun(string xml, string expected)
+        {
+            if (string.IsNullOrEmpty(xml) || xml.Length > 2097152)
+                return false;
+            try
+            {
+                const string word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+                var doc = new System.Xml.XmlDocument
+                {
+                    XmlResolver = null
+                };
+                using (var reader = System.Xml.XmlReader.Create(new System.IO.StringReader(xml), new System.Xml.XmlReaderSettings { XmlResolver = null, DtdProcessing = System.Xml.DtdProcessing.Prohibit, MaxCharactersInDocument = 2097152 }))
+                    doc.Load(reader);
+                var names = new System.Xml.XmlNamespaceManager(doc.NameTable);
+                names.AddNamespace("w", word);
+                var bodies = doc.SelectNodes("//w:document/w:body", names);
+                if (bodies.Count != 1)
+                    return false;
+                System.Xml.XmlElement paragraph = null, run = null;
+                foreach (System.Xml.XmlNode child in bodies[0].ChildNodes)
+                {
+                    if (child.NodeType != System.Xml.XmlNodeType.Element)
+                        continue;
+                    if (child.NamespaceURI != word)
+                        return false;
+                    if (child.LocalName == "sectPr")
+                        continue;
+                    if (child.LocalName != "p" || paragraph != null)
+                        return false;
+                    paragraph = (System.Xml.XmlElement)child;
+                }
+
+                if (paragraph == null)
+                    return false;
+                foreach (System.Xml.XmlNode child in paragraph.ChildNodes)
+                {
+                    if (child.NodeType != System.Xml.XmlNodeType.Element)
+                        continue;
+                    if (child.NamespaceURI != word)
+                        return false;
+                    if (child.LocalName == "pPr" || child.LocalName == "proofErr")
+                        continue;
+                    if (child.LocalName != "r" || run != null)
+                    {
+                        Detail("batch XML paragraph child=" + child.LocalName + " extraRun=" + (run != null));
+                        return false;
+                    }
+
+                    run = (System.Xml.XmlElement)child;
+                }
+
+                if (run == null)
+                    return false;
+                var text = new StringBuilder();
+                foreach (System.Xml.XmlNode child in run.ChildNodes)
+                {
+                    if (child.NodeType != System.Xml.XmlNodeType.Element)
+                        continue;
+                    if (child.NamespaceURI != word)
+                        return false;
+                    if (child.LocalName == "t")
+                    {
+                        foreach (System.Xml.XmlNode value in child.ChildNodes)
+                            if (value.NodeType != System.Xml.XmlNodeType.Text && value.NodeType != System.Xml.XmlNodeType.Whitespace && value.NodeType != System.Xml.XmlNodeType.SignificantWhitespace)
+                                return false;
+                        text.Append(child.InnerText);
+                    }
+                    else if (child.LocalName == "rPr")
+                    {
+                        foreach (System.Xml.XmlNode property in child.ChildNodes)
+                        {
+                            if (property.NodeType != System.Xml.XmlNodeType.Element)
+                                continue;
+                            // Word's range export can add the built-in default
+                            // character-style marker to otherwise plain text.
+                            // Require its explicit default-character definition;
+                            // actual named character styles keep letter edits.
+                            if (property.NamespaceURI == word && property.LocalName == "rStyle" && !property.HasChildNodes && property.Attributes["val", word] != null)
+                            {
+                                var defaults = doc.SelectNodes("//w:styles/w:style[@w:type='character' and (@w:default='1' or @w:default='true')]", names);
+                                if (defaults.Count == 1 && defaults[0].Attributes["styleId", word] != null && defaults[0].Attributes["styleId", word].Value == property.Attributes["val", word].Value && defaults[0].SelectSingleNode("w:rPr | w:basedOn | w:link", names) == null)
+                                    continue;
+                                Detail("batch XML default styles=" + defaults.Count + " referenced-default=" + (defaults.Count == 1 && defaults[0].Attributes["styleId", word] != null && defaults[0].Attributes["styleId", word].Value == property.Attributes["val", word].Value) + " styled=" + (defaults.Count == 1 && defaults[0].SelectSingleNode("w:rPr | w:basedOn | w:link", names) != null));
+                            }
+
+                            if (property.NamespaceURI != word || Array.IndexOf(new[] { "rFonts", "b", "bCs", "i", "iCs", "caps", "smallCaps", "strike", "dstrike", "color", "spacing", "w", "kern", "position", "sz", "szCs", "u", "vertAlign", "lang", "noProof" }, property.LocalName) < 0 || property.HasChildNodes)
+                            {
+                                Detail("batch XML property=" + property.LocalName);
+                                return false;
+                            }
+                        }
+                    }
+                    else
+                        return false;
+                }
+
+                return text.ToString() == expected;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        static bool MayBatchFormatting(object part)
+        {
+            object style = null, font = null;
+            try
+            {
+                // Cheap rejection only. A named character style or mixed
+                // font cannot pass PlainRun; avoid exporting its package.
+                style = Get(part, "Style");
+                if (style != null && !(style is string) && Convert.ToInt32(Get(style, "Type")) == 2)
+                {
+                    Detail("letter batch skipped character style");
+                    return false;
+                }
+
+                font = Get(part, "Font");
+                if (string.IsNullOrEmpty(Convert.ToString(Get(font, "Name"))))
+                {
+                    Detail("letter batch skipped mixed font");
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                // Missing optional metadata still requires the complete XML
+                // proof; it never authorizes grouping by itself.
+                return true;
+            }
+            finally
+            {
+                Free(font);
+                Free(style);
+            }
+        }
+
+        static TextPatch BatchPatch(object story, VisibleMap map, TextPatch[] patches, int index, int count, Func<bool> context)
+        {
+            int offset = patches[index + count - 1].Offset;
+            var before = new StringBuilder();
+            var after = new StringBuilder();
+            for (int n = index + count - 1; n >= index; n--)
+            {
+                before.Append(patches[n].Before);
+                after.Append(patches[n].After);
+            }
+
+            int[][] spans = map.Spans(offset, count);
+            if (spans.Length != 1)
+                return null;
+            object part = null;
+            bool plain = false;
+            try
+            {
+                part = Range(story, spans[0][0], spans[0][1]);
+                plain = MayBatchFormatting(part) && PlainRun(Convert.ToString(Get(part, "WordOpenXML")), before.ToString());
+            }
+            catch (Exception)
+            {
+            // Export is optional. Provider failures keep the established
+            // single-character path; cancellation is checked outside here.
+            }
+            finally
+            {
+                Free(part);
+            }
+
+            if (!context())
+                throw new InvalidOperationException("Conversion context changed during formatting proof");
+            return plain ? new TextPatch(offset, before.ToString(), after.ToString()) : null;
+        }
+
+        internal static TextPatch[] PreparePatches(object whole, VisibleMap map, TextPatch[] patches, Func<bool> context, bool allowBatch)
+        {
+            if (!allowBatch || patches.Length < 2)
+                return patches;
+            int count = AdjacentPatches(patches, 0);
+            if (count < 2)
+                return patches;
+            var batch = BatchPatch(whole, map, patches, 0, count, context);
+            if (!context() || !map.MatchesRaw(Text(whole)) || Convert.ToInt32(Get(whole, "Start")) != map.Start)
+                throw new InvalidOperationException("Batched selection moved or changed");
+            if (batch == null)
+            {
+                Detail("letter batch declined count=" + count);
+                return patches;
+            }
+
+            var result = new TextPatch[patches.Length - count + 1];
+            result[0] = batch;
+            Array.Copy(patches, count, result, 1, patches.Length - count);
+            Detail("batched changed letters=" + count);
+            return result;
+        }
+
+        internal static void ApplyPatches(object whole, object nativeStory, ref VisibleMap currentMap, TextPatch[] patches, Func<bool> context, ref bool changed, ref string currentText, ref int end, ref int lastStoryEnd)
+        {
+            int start = currentMap.Start;
+            for (int index = 0; index < patches.Length; index++)
+            {
+                var beforePatch = currentMap;
+                if (beforePatch == null || beforePatch.Value != currentText || !beforePatch.MatchesRaw(Text(whole)) || Convert.ToInt32(Get(whole, "Start")) != start)
+                    throw new InvalidOperationException("Selection moved or changed");
+                if (!context())
+                    throw new InvalidOperationException("Conversion context changed");
+                TextPatch patch = patches[index];
+                int storyEndBefore = Convert.ToInt32(Get(nativeStory, "End"));
+                var insertedMap = ReplacePatch(whole, beforePatch, patch, ref changed);
+                currentText = currentText.Remove(patch.Offset, patch.Length).Insert(patch.Offset, patch.After);
+                // Growth includes retained tracked deletions. Keep the same
+                // fresh inserted projection and story bounds as letter edits.
+                int storyEndAfter = Convert.ToInt32(Get(nativeStory, "End"));
+                int nativeGrowth = storyEndAfter - storyEndBefore;
+                currentMap = beforePatch.Edited(patch.Offset, patch.Length, insertedMap, nativeGrowth);
+                if (currentMap == null || currentMap.Value != currentText)
+                    throw new InvalidOperationException("Edited revision projection unavailable");
+                end = checked(end + nativeGrowth);
+                if (end < start || end > storyEndAfter)
+                    throw new InvalidOperationException("Native replacement bounds unavailable");
+                Call(whole, "SetRange", start, end);
+                lastStoryEnd = storyEndAfter;
             }
         }
 
@@ -1104,313 +1413,320 @@ namespace KeyJaya
 
         static bool ReplaceCore(IntPtr owner, string input, string output, Func<bool> context, out bool handled, ItalicSpan[] italics, bool retain, string balaramWordFont, FontSnapshot restoreFonts, Action<FontSnapshot> captureFonts, ItalicSpan[] fontSpans, bool expansion, ReplayAnchor replay, FontSnapshot continuationFonts, Action<ReplayAnchor> captureReplay)
         {
-            handled = WordPasteOptions.IsWord(owner) && !WordCommentFocus.IsCommentFocus(owner);
+            handled = WordPasteOptions.IsWord(owner);
             if (!handled)
                 return false;
-            if (!WordPasteOptions.DocumentFocused(owner))
-                return false;
-            object app = null, window = null, selection = null, selectionRange = null, document = null, undo = null, whole = null, nativeStory = null;
-            bool begun = false, changed = false, ended = false;
-            int lastStoryEnd = -1;
-            string currentText = input;
-            VisibleMap currentMap = null;
-            int typingItalic = 0;
-            var objects = new List<object>();
-            FontSnapshot captured = null;
-            try
+            using (WordNativeTiming.Begin(Trace))
             {
-                Detail("entered");
-                if (!context())
+                handled = !WordPasteOptions.TextFieldFocused(owner);
+                if (!handled)
                     return false;
-                TextPatch[] patches = expansion && SelectionConversion.ValidText(input) && SelectionConversion.ValidText(output) ? new[]
+                if (!WordPasteOptions.DocumentFocused(owner))
+                    return false;
+                object app = null, window = null, selection = null, selectionRange = null, document = null, undo = null, whole = null, nativeStory = null;
+                bool begun = false, changed = false, ended = false;
+                int lastStoryEnd = -1;
+                string currentText = input;
+                VisibleMap currentMap = null;
+                int typingItalic = 0;
+                var objects = new List<object>();
+                FontSnapshot captured = null;
+                try
                 {
-                    new TextPatch(0, input, output)
-                }
-
-                : SelectionFormatting.Plan(input, output);
-                italics = MergeVerseSpans(output, italics);
-                if (patches == null)
-                    return false;
-                app = WordApplication.ForWindow(owner);
-                if (app == null)
-                    return false;
-                window = Get(app, "ActiveWindow");
-                uint foregroundPid, wordPid;
-                Native.GetWindowThreadProcessId(owner, out foregroundPid);
-                Native.GetWindowThreadProcessId(new IntPtr(Convert.ToInt64(Get(window, "Hwnd"))), out wordPid);
-                if (wordPid != foregroundPid || foregroundPid == 0 || WordPasteOptions.Owner(new IntPtr(Convert.ToInt64(Get(window, "Hwnd")))) != WordPasteOptions.Owner(owner))
-                    return false;
-                Detail("application obtained");
-                selection = Get(app, "Selection");
-                selectionRange = Get(selection, "Range");
-                int storyType = Convert.ToInt32(Get(selectionRange, "StoryType"));
-                if (!SupportedStory(storyType))
-                    return false;
-                document = Get(selection, "Document");
-                int start = Convert.ToInt32(Get(selection, "Start")), end = Convert.ToInt32(Get(selection, "End"));
-                var selectedMap = Visible(selectionRange);
-                int ownedLength = selectedMap == null ? -1 : SelectionFormatting.WordOwnedLength(input, selectedMap.Value, selectedMap.Value.Length);
-                if (start == end || ownedLength < 0 || !context())
-                {
-                    Detail("range mismatch length=" + (end - start) + " expected=" + input.Length);
-                    return false;
-                }
-
-                if (ownedLength != end - start)
-                    Detail("excluded terminal paragraph marker");
-                end = selectedMap.NativeOffset(ownedLength);
-                whole = Range(selectionRange, start, end);
-                if (Convert.ToInt32(Get(whole, "StoryType")) != storyType)
-                    return false;
-                if (restoreFonts != null && !restoreFonts.Matches(document, start, storyType, output))
-                    return false;
-                var initialMap = ownedLength == selectedMap.Value.Length && end == selectedMap.End ? selectedMap : Visible(whole);
-                if (initialMap == null || initialMap.Value != input)
-                    throw new InvalidOperationException("Original selection projection unavailable");
-                if (captureFonts != null)
-                    captured = CaptureFonts(document, whole, start, input, initialMap);
-                if (replay == null && captureReplay != null)
-                {
-                    replay = ReplayAnchor.FromVerifiedSelection(owner, input, document, whole, initialMap, storyType, continuationFonts ?? captured);
-                    if (replay != null)
-                        captureReplay(replay);
-                }
-
-                object typingFont = Get(selection, "Font");
-                objects.Add(typingFont);
-                typingItalic = Convert.ToInt32(Get(typingFont, "Italic"));
-                int originalTypingItalic;
-                if (continuationFonts != null && continuationFonts.TryContinuation(document, start, storyType, out originalTypingItalic))
-                    typingItalic = originalTypingItalic;
-                undo = Get(app, "UndoRecord");
-                if (Convert.ToInt32(Get(undo, "CustomRecordLevel")) != 0)
-                    return false;
-                Call(undo, "StartCustomRecord", "KeyJaya selection conversion");
-                begun = true;
-                nativeStory = Get(whole, "Duplicate");
-                objects.Add(nativeStory);
-                Call(nativeStory, "WholeStory");
-                lastStoryEnd = Convert.ToInt32(Get(nativeStory, "End"));
-                currentMap = initialMap;
-                foreach (TextPatch patch in patches)
-                {
-                    var beforePatch = currentMap;
-                    if (beforePatch == null || beforePatch.Value != currentText || !beforePatch.MatchesRaw(Text(whole)) || Convert.ToInt32(Get(whole, "Start")) != start)
-                    {
-                        Detail("patch range check observed=" + (beforePatch == null ? -1 : beforePatch.Value.Length) + " expected=" + currentText.Length + " start=" + (Convert.ToInt32(Get(whole, "Start")) == start));
-                        throw new InvalidOperationException("Selection moved or changed");
-                    }
-
+                    Detail("entered");
                     if (!context())
-                        throw new InvalidOperationException("Conversion context changed");
-                    int storyEndBefore = Convert.ToInt32(Get(nativeStory, "End"));
-                    var insertedMap = ReplacePatch(whole, beforePatch, patch, ref changed);
-                    currentText = currentText.Remove(patch.Offset, patch.Length).Insert(patch.Offset, patch.After);
-                    // Replacing a final character can exclude the insertion from a live Range.
-                    // Story growth includes retained tracked deletions as well as visible text.
-                    int storyEndAfter = Convert.ToInt32(Get(nativeStory, "End"));
-                    int nativeGrowth = storyEndAfter - storyEndBefore;
-                    currentMap = beforePatch.Edited(patch.Offset, patch.Length, insertedMap, nativeGrowth);
-                    if (currentMap == null || currentMap.Value != currentText)
-                        throw new InvalidOperationException("Edited revision projection unavailable");
-                    end = checked(end + nativeGrowth);
-                    if (end < start || end > storyEndAfter)
-                        throw new InvalidOperationException("Native replacement bounds unavailable");
-                    Call(whole, "SetRange", start, end);
-                    lastStoryEnd = storyEndAfter;
-                }
-
-                object result = Get(whole, "Duplicate");
-                objects.Add(result);
-                var resultMap = currentMap;
-                if (resultMap == null || resultMap.Value != output || !resultMap.MatchesRaw(Text(result)) || !context())
-                    throw new InvalidOperationException("Conversion result unavailable");
-                if (italics != null)
-                    foreach (var span in italics)
+                        return false;
+                    TextPatch[] patches = expansion && SelectionConversion.ValidText(input) && SelectionConversion.ValidText(output) ? new[]
                     {
-                        if (span.Start < 0 || span.Length < 1 || span.Start + span.Length > output.Length || !context())
-                            throw new InvalidOperationException("Italic selection context changed");
-                        object portion = null, font = null;
-                        try
-                        {
-                            foreach (var segment in resultMap.Spans(span.Start, span.Length))
-                            {
-                                portion = Range(result, segment[0], segment[1]);
-                                font = Get(portion, "Font");
-                                if (ApplyItalic(portion, font, span))
-                                    changed = true;
-                                Free(font);
-                                font = null;
-                                Free(portion);
-                                portion = null;
-                            }
-                        }
-                        finally
-                        {
-                            Free(font);
-                            Free(portion);
-                        }
+                        new TextPatch(0, input, output)
                     }
 
-                if (balaramWordFont != null)
-                {
-                    if (!context() || input.Length > 160 || input.IndexOfAny(new[] { ' ', '\r', '\n', '\t' }) >= 0)
-                        throw new InvalidOperationException("Mixed word font context changed");
-                    if (fontSpans == null)
+                    : SelectionFormatting.Plan(input, output);
+                    italics = MergeVerseSpans(output, italics);
+                    if (patches == null)
+                        return false;
+                    WordNativeTiming.Next("bind");
+                    app = WordApplication.ForWindow(owner);
+                    if (app == null)
+                        return false;
+                    window = Get(app, "ActiveWindow");
+                    uint foregroundPid, wordPid;
+                    Native.GetWindowThreadProcessId(owner, out foregroundPid);
+                    Native.GetWindowThreadProcessId(new IntPtr(Convert.ToInt64(Get(window, "Hwnd"))), out wordPid);
+                    if (wordPid != foregroundPid || foregroundPid == 0 || WordPasteOptions.Owner(new IntPtr(Convert.ToInt64(Get(window, "Hwnd")))) != WordPasteOptions.Owner(owner))
+                        return false;
+                    Detail("application obtained");
+                    WordNativeTiming.Next("range");
+                    selection = Get(app, "Selection");
+                    selectionRange = Get(selection, "Range");
+                    int storyType = Convert.ToInt32(Get(selectionRange, "StoryType"));
+                    if (!SupportedStory(storyType))
+                        return false;
+                    document = Get(selection, "Document");
+                    int start = Convert.ToInt32(Get(selection, "Start")), end = Convert.ToInt32(Get(selection, "End"));
+                    int selectedEnd = end;
+                    var selectedMap = Visible(selectionRange);
+                    int ownedLength = selectedMap == null ? -1 : SelectionFormatting.WordOwnedLength(input, selectedMap.Value, selectedMap.Value.Length);
+                    if (start == end || ownedLength < 0 || !context())
                     {
-                        foreach (var segment in resultMap.Spans(0, output.Length))
-                        {
-                            object visiblePart = null, font = null;
-                            try
-                            {
-                                visiblePart = Range(result, segment[0], segment[1]);
-                                font = Get(visiblePart, "Font");
-                                Set(font, "Name", balaramWordFont);
-                                changed = true;
-                            }
-                            finally
-                            {
-                                Free(font);
-                                Free(visiblePart);
-                            }
-                        }
+                        Detail("range mismatch length=" + (end - start) + " expected=" + input.Length);
+                        return false;
                     }
-                    else
-                        foreach (var span in fontSpans)
+
+                    if (ownedLength != end - start)
+                        Detail("excluded terminal paragraph marker");
+                    end = selectedMap.NativeOffset(ownedLength);
+                    whole = Range(selectionRange, start, end);
+                    if (Convert.ToInt32(Get(whole, "StoryType")) != storyType)
+                        return false;
+                    if (restoreFonts != null && !restoreFonts.Matches(document, start, storyType, output))
+                        return false;
+                    var initialMap = ownedLength == selectedMap.Value.Length && end == selectedMap.End ? selectedMap : Visible(whole);
+                    if (initialMap == null || initialMap.Value != input)
+                        throw new InvalidOperationException("Original selection projection unavailable");
+                    // WordOpenXML can interfere with an open custom undo record.
+                    // Prove only the first candidate before any edit/undo begins;
+                    // later runs retain their original per-character changes.
+                    if (storyType == 1 && !expansion && patches.Length > 1 && AdjacentPatches(patches, 0) > 1)
+                    {
+                        undo = Get(app, "UndoRecord");
+                        if (Convert.ToInt32(Get(undo, "CustomRecordLevel")) != 0)
+                            return false;
+                        WordNativeTiming.Next("batch-proof");
+                        patches = PreparePatches(whole, initialMap, patches, context, true);
+                        if (!context() || !OwnedTextAnchor.Foreground(app, owner) || Convert.ToInt32(Get(selection, "Start")) != start || Convert.ToInt32(Get(selection, "End")) != selectedEnd)
+                            throw new InvalidOperationException("Selection changed during formatting proof");
+                    }
+
+                    WordNativeTiming.Next("font-snapshot");
+                    if (captureFonts != null)
+                        captured = CaptureFonts(document, whole, start, input, initialMap);
+                    WordNativeTiming.Next("replay-capture");
+                    if (replay == null && captureReplay != null)
+                    {
+                        replay = ReplayAnchor.FromVerifiedSelection(owner, input, document, whole, initialMap, storyType, continuationFonts ?? captured);
+                        if (replay != null)
+                            captureReplay(replay);
+                    }
+
+                    WordNativeTiming.Next("undo-start");
+                    object typingFont = Get(selection, "Font");
+                    objects.Add(typingFont);
+                    typingItalic = Convert.ToInt32(Get(typingFont, "Italic"));
+                    int originalTypingItalic;
+                    if (continuationFonts != null && continuationFonts.TryContinuation(document, start, storyType, out originalTypingItalic))
+                        typingItalic = originalTypingItalic;
+                    if (undo == null)
+                        undo = Get(app, "UndoRecord");
+                    if (Convert.ToInt32(Get(undo, "CustomRecordLevel")) != 0)
+                        return false;
+                    Call(undo, "StartCustomRecord", "KeyJaya selection conversion");
+                    begun = true;
+                    nativeStory = Get(whole, "Duplicate");
+                    objects.Add(nativeStory);
+                    Call(nativeStory, "WholeStory");
+                    lastStoryEnd = Convert.ToInt32(Get(nativeStory, "End"));
+                    currentMap = initialMap;
+                    WordNativeTiming.Next("patches");
+                    ApplyPatches(whole, nativeStory, ref currentMap, patches, context, ref changed, ref currentText, ref end, ref lastStoryEnd);
+                    WordNativeTiming.Next("formatting");
+                    object result = Get(whole, "Duplicate");
+                    objects.Add(result);
+                    var resultMap = currentMap;
+                    if (resultMap == null || resultMap.Value != output || !resultMap.MatchesRaw(Text(result)) || !context())
+                        throw new InvalidOperationException("Conversion result unavailable");
+                    if (italics != null)
+                        foreach (var span in italics)
                         {
                             if (span.Start < 0 || span.Length < 1 || span.Start + span.Length > output.Length || !context())
-                                throw new InvalidOperationException("Compound font scope changed");
-                            object part = null, font = null;
+                                throw new InvalidOperationException("Italic selection context changed");
+                            object portion = null, font = null;
                             try
                             {
                                 foreach (var segment in resultMap.Spans(span.Start, span.Length))
                                 {
-                                    part = Range(result, segment[0], segment[1]);
-                                    font = Get(part, "Font");
-                                    Set(font, "Name", balaramWordFont);
-                                    changed = true;
+                                    portion = Range(result, segment[0], segment[1]);
+                                    font = Get(portion, "Font");
+                                    if (ApplyItalic(portion, font, span))
+                                        changed = true;
                                     Free(font);
                                     font = null;
-                                    Free(part);
-                                    part = null;
+                                    Free(portion);
+                                    portion = null;
                                 }
                             }
                             finally
                             {
                                 Free(font);
-                                Free(part);
+                                Free(portion);
                             }
                         }
-                }
 
-                if (restoreFonts != null)
-                {
-                    if (!context())
-                        throw new InvalidOperationException("Font restoration context changed");
-                    RestoreFonts(restoreFonts, result, start, context, resultMap);
-                    changed = true;
-                }
-
-                if (!retain)
-                    Call(result, "Collapse", 0);
-                Call(result, "Select");
-                if (!retain && restoreFonts == null && italics != null && (typingItalic == 0 || typingItalic == -1))
-                {
-                    object font = Get(selection, "Font");
-                    try
+                    if (balaramWordFont != null)
                     {
-                        Set(font, "Italic", typingItalic);
+                        if (!context() || input.Length > 160 || input.IndexOfAny(new[] { ' ', '\r', '\n', '\t' }) >= 0)
+                            throw new InvalidOperationException("Mixed word font context changed");
+                        if (fontSpans == null)
+                        {
+                            foreach (var segment in resultMap.Spans(0, output.Length))
+                            {
+                                object visiblePart = null, font = null;
+                                try
+                                {
+                                    visiblePart = Range(result, segment[0], segment[1]);
+                                    font = Get(visiblePart, "Font");
+                                    Set(font, "Name", balaramWordFont);
+                                    changed = true;
+                                }
+                                finally
+                                {
+                                    Free(font);
+                                    Free(visiblePart);
+                                }
+                            }
+                        }
+                        else
+                            foreach (var span in fontSpans)
+                            {
+                                if (span.Start < 0 || span.Length < 1 || span.Start + span.Length > output.Length || !context())
+                                    throw new InvalidOperationException("Compound font scope changed");
+                                object part = null, font = null;
+                                try
+                                {
+                                    foreach (var segment in resultMap.Spans(span.Start, span.Length))
+                                    {
+                                        part = Range(result, segment[0], segment[1]);
+                                        font = Get(part, "Font");
+                                        Set(font, "Name", balaramWordFont);
+                                        changed = true;
+                                        Free(font);
+                                        font = null;
+                                        Free(part);
+                                        part = null;
+                                    }
+                                }
+                                finally
+                                {
+                                    Free(font);
+                                    Free(part);
+                                }
+                            }
                     }
-                    finally
+
+                    if (restoreFonts != null)
                     {
-                        Free(font);
+                        if (!context())
+                            throw new InvalidOperationException("Font restoration context changed");
+                        RestoreFonts(restoreFonts, result, start, context, resultMap);
+                        changed = true;
                     }
-                }
 
-                if (captured != null)
-                {
-                    captureFonts(captured);
-                    captured = null;
-                }
+                    WordNativeTiming.Next("selection-end");
+                    if (!retain)
+                        Call(result, "Collapse", 0);
+                    Call(result, "Select");
+                    if (!retain && restoreFonts == null && italics != null && (typingItalic == 0 || typingItalic == -1))
+                    {
+                        object font = Get(selection, "Font");
+                        try
+                        {
+                            Set(font, "Italic", typingItalic);
+                        }
+                        finally
+                        {
+                            Free(font);
+                        }
+                    }
 
-                if (replay != null && replay.DeferRecord(document, start, storyType, resultMap, undo))
-                {
-                    ended = true;
-                    undo = null;
-                }
-                else
-                {
-                    Call(undo, "EndCustomRecord");
-                    ended = true;
-                }
+                    WordNativeTiming.Next("undo-end");
+                    if (captured != null)
+                    {
+                        captureFonts(captured);
+                        captured = null;
+                    }
 
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Detail("exception=" + ex.GetType().Name + " code=" + ex.HResult);
-                if (ex is InvalidOperationException && ex.TargetSite != null && ex.TargetSite.DeclaringType == typeof(WordSelection))
-                    Detail("reason=" + ex.Message);
-                if (ex.InnerException != null)
-                    Detail("inner=" + ex.InnerException.GetType().Name + " code=" + ex.InnerException.HResult);
-                if (begun && !ended)
-                {
-                    try
+                    if (replay != null && replay.DeferRecord(document, start, storyType, resultMap, undo))
+                    {
+                        ended = true;
+                        undo = null;
+                    }
+                    else
                     {
                         Call(undo, "EndCustomRecord");
                         ended = true;
                     }
-                    catch (Exception)
-                    {
-                    }
+
+                    WordNativeTiming.Committed();
+                    return true;
                 }
-
-                if (changed)
-                    try
+                catch (Exception ex)
+                {
+                    WordNativeTiming.Next("rollback");
+                    Detail("exception=" + ex.GetType().Name + " code=" + ex.HResult);
+                    if (ex is InvalidOperationException && ex.TargetSite != null && ex.TargetSite.DeclaringType == typeof(WordSelection))
+                        Detail("reason=" + ex.Message);
+                    if (ex.InnerException != null)
+                        Detail("inner=" + ex.InnerException.GetType().Name + " code=" + ex.InnerException.HResult);
+                    if (begun && !ended)
                     {
-                        bool rollback = context();
-                        if (!rollback && whole != null && nativeStory != null && Native.GetForegroundWindow() != owner)
+                        try
                         {
-                            rollback = currentMap != null && currentMap.Value == currentText && currentMap.MatchesRaw(Text(whole)) && Convert.ToInt32(Get(nativeStory, "End")) == lastStoryEnd;
+                            Call(undo, "EndCustomRecord");
+                            ended = true;
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    if (changed)
+                        try
+                        {
+                            bool rollback = context();
+                            if (!rollback && whole != null && nativeStory != null && Native.GetForegroundWindow() != owner)
+                            {
+                                rollback = currentMap != null && currentMap.Value == currentText && currentMap.MatchesRaw(Text(whole)) && Convert.ToInt32(Get(nativeStory, "End")) == lastStoryEnd;
+                            }
+
+                            if (rollback)
+                            {
+                                Call(document, "Undo", 1);
+                                Detail("unfinished transaction rolled back");
+                            }
+                            else
+                                Detail("rollback skipped: ownership changed");
+                        }
+                        catch (Exception)
+                        {
+                            Detail("rollback unavailable");
                         }
 
-                        if (rollback)
+                    return false;
+                }
+                finally
+                {
+                    WordNativeTiming.Next("cleanup");
+                    if (captured != null)
+                        captured.Dispose();
+                    if (begun && !ended)
+                        try
                         {
-                            Call(document, "Undo", 1);
-                            Detail("unfinished transaction rolled back");
+                            Call(undo, "EndCustomRecord");
                         }
-                        else
-                            Detail("rollback skipped: ownership changed");
-                    }
-                    catch (Exception)
-                    {
-                        Detail("rollback unavailable");
-                    }
+                        catch (Exception)
+                        {
+                        }
 
-                return false;
-            }
-            finally
-            {
-                if (captured != null)
-                    captured.Dispose();
-                if (begun && !ended)
-                    try
-                    {
-                        Call(undo, "EndCustomRecord");
-                    }
-                    catch (Exception)
-                    {
-                    }
-
-                for (int i = objects.Count - 1; i >= 0; i--)
-                    Free(objects[i]);
-                Free(whole);
-                Free(undo);
-                Free(document);
-                Free(selectionRange);
-                Free(selection);
-                Free(window);
-                Free(app);
+                    for (int i = objects.Count - 1; i >= 0; i--)
+                        Free(objects[i]);
+                    Free(whole);
+                    Free(undo);
+                    Free(document);
+                    Free(selectionRange);
+                    Free(selection);
+                    Free(window);
+                    Free(app);
+                }
             }
         }
     }

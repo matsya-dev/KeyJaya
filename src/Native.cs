@@ -137,7 +137,7 @@ namespace KeyJaya
         public static System.Windows.Automation.AutomationElement Focused(IntPtr owner)
         {
             if (WordPasteOptions.IsWord(owner))
-                return WordCommentFocus.Focused(owner);
+                return WordSearchField.Resolve(WordSearchField.NativeFocused(owner), () => WordSearchField.FocusedElement(owner), () => WordCommentFocus.Focused(owner));
             var normal = System.Windows.Automation.AutomationElement.FocusedElement;
             if (owner == IntPtr.Zero || owner != Native.GetForegroundWindow() || Class(owner) != "WinUIDesktopWin32WindowClass")
                 return normal;
@@ -273,7 +273,7 @@ namespace KeyJaya
         static extern IntPtr GetClipboardOwner();
         [DllImport("user32.dll")]
         static extern uint EnumClipboardFormats(uint format);
-        static bool ClipboardActuallyEmpty(uint sequence)
+        internal static bool ClipboardActuallyEmpty(uint sequence)
         {
             if (!OpenClipboardBriefly(IntPtr.Zero))
                 return false;
@@ -342,7 +342,7 @@ namespace KeyJaya
         // dialog text, but the native provider returns CLIPBRD_E_BAD_DATA. There is
         // no payload to preserve in that case. A real or merely inaccessible Adobe
         // payload must still make the whole backup fail rather than be discarded.
-        static bool EmptyAdobeClipboardAdvertisement(string format)
+        internal static bool EmptyAdobeClipboardAdvertisement(string format)
         {
             if (format != "InDesignCS3Interchange")
                 return false;
@@ -443,79 +443,9 @@ namespace KeyJaya
             // advertised format before changing the clipboard, or decline the probe.
             public static ClipboardReference Capture()
             {
-                for (int n = 0; n < 3; n++)
-                {
-                    if (n > 0 && System.Threading.Thread.CurrentThread.GetApartmentState() == System.Threading.ApartmentState.STA)
-                        System.Windows.Forms.Application.DoEvents();
-                    var value = CaptureOnce();
-                    if (value != null)
-                        return value;
-                    if (n < 2)
-                        System.Threading.Thread.Sleep(5);
-                }
-
-                return null;
-            }
-
-            static ClipboardReference CaptureOnce()
-            {
-                LastFailure = null;
-                try
-                {
-                    uint sequence = GetClipboardSequenceNumber();
-                    var value = System.Windows.Forms.Clipboard.GetDataObject();
-                    var copy = new System.Windows.Forms.DataObject();
-                    string[] formats = value == null ? new string[0] : value.GetFormats(false);
-                    // OLE may transiently return no object/formats while native data is
-                    // still present. That is a failed read, never an empty backup.
-                    if (formats.Length == 0 && !ClipboardActuallyEmpty(sequence))
-                    {
-                        LastFailure = "OLE formats unavailable for nonempty clipboard";
-                        return null;
-                    }
-
-                    foreach (string format in formats)
-                    {
-                        object data = value.GetData(format, false);
-                        if (data == null)
-                        {
-                            if (EmptyAdobeClipboardAdvertisement(format))
-                                continue;
-                            LastFailure = "unavailable format: " + format;
-                            return null;
-                        }
-
-                        copy.SetData(format, false, SelectionConversion.CloneClipboardValue(data));
-                    }
-
-                    if (sequence != GetClipboardSequenceNumber())
-                    {
-                        LastFailure = "sequence changed during snapshot";
-                        return null;
-                    }
-
-                    string raw;
-                    bool readable = ClipboardUnicode(sequence, 8 * 1024 * 1024, out raw);
-                    bool unicode = copy.GetDataPresent(System.Windows.Forms.DataFormats.UnicodeText, false);
-                    if (readable ? (!unicode || copy.GetData(System.Windows.Forms.DataFormats.UnicodeText, false) as string != raw) : (unicode || ClipboardReadFailure != "Unicode payload unavailable"))
-                    {
-                        LastFailure = "native Unicode snapshot verification failed: " + ClipboardReadFailure;
-                        return null;
-                    }
-
-                    if (sequence != GetClipboardSequenceNumber())
-                    {
-                        LastFailure = "sequence changed during snapshot verification";
-                        return null;
-                    }
-
-                    return new ClipboardReference(copy, sequence);
-                }
-                catch (Exception ex)
-                {
-                    LastFailure = ex.GetType().Name + " code=" + ex.HResult;
-                    return null;
-                }
+                var snapshot = ClipboardSnapshot.Capture();
+                LastFailure = ClipboardSnapshot.LastFailure;
+                return snapshot == null ? null : new ClipboardReference(snapshot.Data, snapshot.Sequence);
             }
 
             public bool Restore(uint sequence)
@@ -867,7 +797,7 @@ namespace KeyJaya
             bool cleared = false;
             try
             {
-                if (!OwnLeaseOpen(window, expected))
+                if (!OwnLeaseOpen(window, expected) && !FailedTemporaryClipboardOwned(window, expected))
                     return false;
                 if (!EmptyClipboard())
                     return false;
@@ -1476,6 +1406,8 @@ namespace KeyJaya
         public static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
         [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
         static extern IntPtr EditMessageTimeout(IntPtr hwnd, uint msg, IntPtr w, IntPtr l, uint flags, uint milliseconds, out UIntPtr result);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+        internal static extern int EditStyle(IntPtr window, int index);
         [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", CharSet = CharSet.Unicode, SetLastError = true)]
         static extern IntPtr EditTextTimeout(IntPtr hwnd, uint msg, IntPtr w, StringBuilder l, uint flags, uint milliseconds, out UIntPtr result);
         public static bool TryReadEditText(IntPtr handle, out string text)

@@ -316,6 +316,20 @@ namespace KeyJaya
             return sameOwner && pending && (document || pasteMenu);
         }
 
+        internal static bool MenuPath<T>(T node, Func<T, bool> document, Func<T, string> label, Func<T, T> parent)
+            where T : class
+        {
+            for (int n = 0; n < 10 && node != null; n++, node = parent(node))
+            {
+                if (document(node))
+                    return false;
+                if (Label(label(node)))
+                    return true;
+            }
+
+            return false;
+        }
+
         public static bool Settled(bool document, bool pasteMenu)
         {
             return document && !pasteMenu;

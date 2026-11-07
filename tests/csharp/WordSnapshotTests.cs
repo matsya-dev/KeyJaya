@@ -6,8 +6,10 @@ namespace KeyJaya
 {
     public static class WordSnapshotTests
     {
-        public static int Main()
+        public static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--focus-fixture")
+                return FocusMonitorTests.Fixture(args[1]);
             int passed = 0;
             foreach (string host in new[]
             {
@@ -31,7 +33,8 @@ namespace KeyJaya
             foreach (string id in new[]
             {
                 "cardEditor_4_025af5b1-b25b-41c0-84dc-c3332098b9e3",
-                "cardEditor_4_1379485682"
+                "cardEditor_4_1379485682",
+                "postEditor_4_1272421377"
             }
 
             )
@@ -46,6 +49,8 @@ namespace KeyJaya
                 null,
                 "",
                 "cardEditor_",
+                "postEditor_",
+                "PostEditor_4_1",
                 "CardEditor_4_1",
                 "Find",
                 "Body",
@@ -310,9 +315,19 @@ namespace KeyJaya
             passed++;
             passed += WordApplicationTests.Run();
             passed += WordCommentFocusTests.Run();
+            passed += ModernWordSetupTests.Run();
+            passed += FocusMonitorTests.Run();
+            passed += InputHookThreadTests.Run();
             passed += WordNavigationTests.Run();
+            passed += WordSearchFieldTests.Run(args[0]);
             passed += WordTransactionReuseTests.Run();
+            passed += WordNativeTimingTests.Run();
+            passed += WordRevisionEnumerationTests.Run();
+            passed += WordRevisionBatchTests.Run();
             passed += WordFormattingCycleTests.Run();
+            string performanceFixture = args.Length > 1 ? args[1] : System.IO.Path.Combine(Environment.CurrentDirectory, "tests", "fixtures", "word-performance.json");
+            passed += WordPerformanceContracts.Run(System.IO.File.ReadAllText(performanceFixture));
+            passed += WordBatchingTests.Run();
             Console.WriteLine("PASS: " + passed + " FAIL: 0");
             return 0;
         }

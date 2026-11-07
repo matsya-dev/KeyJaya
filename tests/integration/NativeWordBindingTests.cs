@@ -14,7 +14,7 @@ using System.Windows.Forms;
 
 namespace KeyJaya
 {
-    public static class NativeWordBindingTests
+    public static partial class NativeWordBindingTests
     {
         static int passed;
         [DllImport("kernel32.dll", SetLastError = true)]

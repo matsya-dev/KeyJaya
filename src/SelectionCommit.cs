@@ -218,6 +218,26 @@ namespace KeyJaya
     // Selection requests can be ignored or asynchronous. Never equate a request with success.
     public static class SelectionCommit
     {
+        // The native selector proves document, story, caret, text and resulting
+        // selection in one binding; commit still performs its live selection check.
+        internal static bool PrepareNative(Func<bool> context, Func<bool> select, Func<bool> restore)
+        {
+            bool requested = false, success = false;
+            try
+            {
+                if (!context())
+                    return false;
+                requested = true;
+                success = select() && context();
+                return success;
+            }
+            finally
+            {
+                if (requested && !success && context())
+                    restore();
+            }
+        }
+
         public static bool OwnedRange(bool expanded, bool startSame, bool endSame, bool textSame, bool rangeSame, bool boundary, bool word, string endGap)
         {
             return expanded && startSame && textSame && rangeSame && boundary && (endSame || (word && endGap == ""));
@@ -233,14 +253,21 @@ namespace KeyJaya
             return text.Length;
         }
 
-        public static bool Prepare(ISelectionSurface surface, Func<bool> context, Action wait = null, bool keyboardFirst = false)
+        public static bool Prepare(ISelectionSurface surface, Func<bool> context, Action wait = null, bool keyboardFirst = false, bool capturedSelection = false)
         {
             bool success = false, requested = false;
             try
             {
                 if (wait == null)
                     wait = () => Thread.Sleep(10);
-                if (!context() || !surface.AtOwnedCaret())
+                if (!context())
+                    return false;
+                // A captured one-word selection already has exact range/text
+                // evidence. It must not be required to masquerade as a caret or
+                // receive navigation before the native Word transaction.
+                if (capturedSelection)
+                    return surface.ExactSelection() && context();
+                if (!surface.AtOwnedCaret())
                     return false;
                 if (keyboardFirst)
                 {

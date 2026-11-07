@@ -29,10 +29,96 @@ namespace KeyJaya
             Check(wanted == actual, name + " wanted=" + wanted + " actual=" + actual);
         }
 
+        static void DevanagariTerm(Core core, string root)
+        {
+            string[, ] forms =
+            {
+                {
+                    "devanagari",
+                    "devanāgarī"
+                },
+                {
+                    "Devanagari",
+                    "Devanāgarī"
+                },
+                {
+                    "DEVANAGARI",
+                    "DEVANĀGARĪ"
+                }
+            };
+            Check(core.English("devanagari") && core.RecognizedIndic("devanagari"), "requested word is an explicit recognition exception, not an English dictionary rewrite");
+            foreach (string mode in new[]
+            {
+                "unicode",
+                "balaram",
+                "plain"
+            }
+
+            )
+            {
+                for (int n = 0; n < forms.GetLength(0); n++)
+                {
+                    string input = forms[n, 0], expected = Core.Target(forms[n, 1], mode);
+                    Equal(expected, core.Word(input, mode), "Devanagari word " + input + " " + mode);
+                    Equal(expected, core.ConvertCopied(input, mode), "Devanagari copied " + input + " " + mode);
+                    Equal(expected, core.ConvertHighlighted(input, mode), "Devanagari selected " + input + " " + mode);
+                    Equal(expected, core.PrepareControlWord(input, mode).Text, "Devanagari Ctrl plan " + input + " " + mode);
+                    var choices = core.CaretChoices(input, mode);
+                    Check(choices.Length > 0 && choices[0] == expected && choices.Contains(Core.Target(input, "plain")), "Devanagari cycle retains canonical first and original " + input + " " + mode);
+                }
+
+                Equal(Core.Target("devanāgarī", mode), core.ConvertCopied("devanāgarī", mode), "already-correct Devanagari copied " + mode);
+                Equal("Use " + Core.Target("devanāgarī", mode) + ", Bengali and Tamil.", core.ConvertCopied("Use devanagari, Bengali and Tamil.", mode), "only the requested word changes in prose " + mode);
+                foreach (string word in new[]
+                {
+                    "Bengali",
+                    "bengali",
+                    "Tamil",
+                    "tamil"
+                }
+
+                )
+                {
+                    Equal(word, core.ConvertCopied(word, mode), "other language remains unchanged " + word + " " + mode);
+                    Equal(word, core.ConvertHighlighted(word, mode), "other selected language remains unchanged " + word + " " + mode);
+                    Check(core.CaretChoices(word, mode).Length == 0 && !core.RecognizedIndic(word, mode), "other language recognition is not broadened " + word + " " + mode);
+                    Check(core.ControlItalics(null, word, mode, true).Length == 0, "other language styling remains unchanged " + word + " " + mode);
+                }
+            }
+
+            Equal("devanāgarī", core.Trigger("devanagari>"), "requested explicit Unicode suffix");
+            Equal(Core.Target("devanāgarī", "balaram"), core.Trigger("devanagari<"), "requested explicit legacy suffix");
+            Equal("devanagari", core.Trigger("devanagari?"), "requested explicit plain suffix");
+            Equal("https://example.org/devanagari", core.ConvertCopied("https://example.org/devanagari", "unicode"), "new vocabulary leaves protected URLs intact");
+            string custom = Path.Combine(root, "config", "customizations.ini");
+            byte[] before = File.ReadAllBytes(custom);
+            try
+            {
+                File.WriteAllText(custom, "[words]\r\ndevanagari\t!keep\r\n", new UTF8Encoding(false));
+                using (var protectedCore = new Core(root))
+                {
+                    Equal("devanagari", protectedCore.ConvertHighlighted("devanagari", "unicode"), "personal protection overrides the new default");
+                    Check(protectedCore.CaretChoices("devanagari", "unicode").Length == 0, "protected requested word does not cycle");
+                }
+
+                File.WriteAllText(custom, "[words]\r\ndevanagari\tdevanagarī\r\n", new UTF8Encoding(false));
+                using (var preferredCore = new Core(root))
+                {
+                    Equal("devanagarī", preferredCore.Word("devanagari", "unicode"), "personal spelling overrides the new default");
+                    Equal("devanagarī", preferredCore.CaretChoices("devanagari", "unicode")[0], "personal spelling stays first in the new cycle");
+                }
+            }
+            finally
+            {
+                File.WriteAllBytes(custom, before);
+            }
+        }
+
         public static int Main(string[] args)
         {
             using (Core c = new Core(args[0]))
             {
+                DevanagariTerm(c, args[0]);
                 string[] plain =
                 {
                     "Srila",

@@ -7,6 +7,32 @@ namespace KeyJaya
     public static class ReplayTests
     {
         static int passed, failed;
+        static void ClipboardObservations()
+        {
+            uint sequence = 17;
+            int reads = 0;
+            var observed = InputClipboardObservation.Capture(() => sequence, () =>
+            {
+                reads++;
+                return "prepared query";
+            });
+            Check(observed != null && observed.Text == "prepared query" && reads == 1, "clipboard evidence uses one successful read");
+            Check(observed.Current(17) && !observed.Current(18), "a newer clipboard invalidates captured cycling evidence");
+            var changed = InputClipboardObservation.Capture(() => sequence, () =>
+            {
+                sequence++;
+                return "older data";
+            });
+            Check(changed == null, "clipboard changes during delayed rendering cannot create cycling evidence");
+            var unavailable = InputClipboardObservation.Capture(() => sequence, () =>
+            {
+                throw new System.Runtime.InteropServices.ExternalException("Injected busy clipboard");
+            });
+            Check(unavailable == null, "unavailable clipboard yields no cycling evidence");
+            observed = InputClipboardObservation.Capture(() => sequence, () => "");
+            Check(observed != null && observed.Text == "" && observed.Current(sequence), "a stable empty clipboard remains valid evidence");
+        }
+
         static void Check(bool ok, string name)
         {
             if (ok)
@@ -101,6 +127,7 @@ namespace KeyJaya
 
         public static int Main(string[] args)
         {
+            ClipboardObservations();
             NavigationChords();
             DateTime now = new DateTime(2026, 10, 11, 0, 0, 0, DateTimeKind.Utc);
             IntPtr window = new IntPtr(10);

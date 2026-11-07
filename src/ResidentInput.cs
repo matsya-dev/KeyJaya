@@ -1,12 +1,45 @@
 // KeyJaya: Resident input-hold lifecycle and exactly-once replay coordination.
 // This partial shares the existing resident instance, synchronization gate and
-// field initializers. It adds no worker, timer, queue, or input hook.
+// field initializers. Closed-target COM cleanup is queued off the hook thread.
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace KeyJaya
 {
+    // Read clipboard/OLE data on its caller's STA before taking the input gate.
+    // A changed or unavailable clipboard cannot become cycling evidence.
+    internal sealed class InputClipboardObservation
+    {
+        internal readonly string Text;
+        internal readonly uint Sequence;
+        InputClipboardObservation(string text, uint sequence)
+        {
+            Text = text;
+            Sequence = sequence;
+        }
+
+        internal static InputClipboardObservation Capture(Func<uint> sequence, Func<string> read)
+        {
+            try
+            {
+                uint before = sequence();
+                string text = read();
+                return before == sequence() ? new InputClipboardObservation(text, before) : null;
+            }
+            catch (ExternalException)
+            {
+                return null;
+            }
+        }
+
+        internal bool Current(uint sequence)
+        {
+            return sequence == Sequence;
+        }
+    }
+
     public sealed partial class Resident
     {
         bool RecoverClosedInputTarget()
@@ -14,9 +47,16 @@ namespace KeyJaya
             if (!correctionInputHold.Active || Native.IsWindow(correctionHoldOwner))
                 return false;
             if (manualWordAnchor != null)
-                manualWordAnchor.FinishRecord();
+            {
+                var retiring = manualWordAnchor;
+                System.Threading.ThreadPool.QueueUserWorkItem(unused => retiring.FinishRecord());
+            }
+
             correctionInputHold.Take(correctionHoldOwner);
-            manualRetry.Stop();
+            if (uiThreadId != 0 && Thread.CurrentThread.ManagedThreadId != uiThreadId)
+                BeginInvoke((Action)(() => manualRetry.Stop()));
+            else
+                manualRetry.Stop();
             manualRetryAttempts = 0;
             manualInputActive = manualInputReady = manualInputSelected = false;
             manualInputEdit = null;
@@ -90,7 +130,7 @@ namespace KeyJaya
 
         void ManualSelectionVerified(SafeEdit edit, WordSelection.FontSnapshot continuation = null, bool captureInReplacement = false)
         {
-            if (manualInputActive && edit != null && WordPasteOptions.IsWord(edit.Window))
+            if (manualInputActive && edit != null && WordPasteOptions.IsWord(edit.Window) && !WordSearchField.NativeFocused(edit.Window))
             {
                 // Native Word replacement already proves the same document,
                 // visible range and continuation style. Capture inside that
@@ -229,6 +269,8 @@ namespace KeyJaya
 
         IntPtr Mouse(int code, IntPtr w, IntPtr l)
         {
+            if (closing)
+                return Native.CallNextHookEx(mouseHook, code, w, l);
             bool drained = code >= 0 && ((Native.MouseHookData)Marshal.PtrToStructure(l, typeof(Native.MouseHookData))).extra.ToUInt64() == Native.DrainedInput;
             try
             {
@@ -252,6 +294,8 @@ namespace KeyJaya
         // provider queries and formatting are handled by the later worker/STA stages.
         IntPtr Keyboard(int code, IntPtr w, IntPtr l)
         {
+            if (closing)
+                return Native.CallNextHookEx(keyHook, code, w, l);
             bool drained = code >= 0 && ((Native.KeyData)Marshal.PtrToStructure(l, typeof(Native.KeyData))).extra.ToUInt64() == Native.DrainedInput;
             try
             {

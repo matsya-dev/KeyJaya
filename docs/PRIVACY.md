@@ -1,6 +1,6 @@
 # Privacy and local data
 
-This describes the source of KeyJaya 1.9.6, rather than making promises about
+This describes the source of KeyJaya 1.9.8, rather than making promises about
 other software or future releases.
 
 ## Keyboard and editor access
@@ -16,6 +16,13 @@ formatting. An editor can expose a larger text range than the word being changed
 that context is used to verify the target, preserve formatting, and support undo.
 This is not a background crawl of files on the computer.
 
+The development resident runs a hidden copy of its executable to observe Word
+comment-focus events safely. That helper sends window/process identifiers,
+comment editor/runtime IDs and control bounds to its parent through local pipes;
+it does not read document text, load preferences, use the clipboard or send input.
+The resident still checks the live editor before conversion. Helper readiness,
+failure and restart are ordinary local status logs.
+
 **Pause KeyJaya** stops conversion hooks/shortcuts and restores the app's ordinary
 key behavior. **Exit** closes the resident process. Do not assume every custom,
 protected, or elevated editor is supported.
@@ -27,6 +34,15 @@ temporarily copy selected text or paste a replacement while preserving the
 previous clipboard. The code checks clipboard ownership/sequence and attempts
 to restore the original formats without overwriting newer clipboard contents.
 If it cannot safely capture or verify a target, a conversion can be skipped.
+
+The unreleased recovery build reads plain clipboard text through a bounded native
+reader. For a full backup, a short-lived hidden copy reads clipboard formats and
+sends a typed snapshot to its parent through a private local pipe. That helper
+reads no preferences/documents, installs no hooks and never writes the clipboard.
+The snapshot can contain clipboard text and images; it stays in memory and is
+not written to a KeyJaya log or report. Timeout, provider failure or unsupported
+formats leave the clipboard unchanged. Existing Windows crash-report/dump settings
+are separate from KeyJaya's own logging.
 
 Temporary conversion payloads are marked to exclude them from Windows clipboard
 history and cloud clipboard processing. Those flags are not a guarantee about
@@ -70,6 +86,11 @@ messages, limited to 15 minutes and 2,000 diagnostic entries. These can include
 control identifiers, selection lengths/positions, key codes, timings, and error
 details. Inspect and redact logs, screenshots, paths, and sample text before
 posting them publicly. Diagnostics are off in an ordinary launch.
+
+The development Word timing extension records transaction-stage elapsed times,
+call counts, property/method names and completion status. It does not include
+call arguments, returned text, document names or provider exception messages in
+its timing summary. It uses the same opt-in diagnostic limits above.
 
 ## Network and updates
 

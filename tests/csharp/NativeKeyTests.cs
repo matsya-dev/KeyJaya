@@ -64,6 +64,12 @@ namespace KeyJaya
 
         public static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--clipboard-fixture")
+                return ClipboardSnapshotTests.Fixture(args[1]);
+            if (args.Length == 1 && args[0] == "--native-edit-host")
+                return NativeEditTests.Host();
+            passed += ClipboardSnapshotTests.Run();
+            passed += NativeEditTests.Run();
             Check(Marshal.SizeOf(typeof(Native.Input)) == 40, "Windows x64 INPUT ABI");
             foreach (ushort key in new ushort[]
             {

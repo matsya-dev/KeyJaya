@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "cases": [
+    {"id":"caret-word","kind":"caret","input":"krsna","output":"kṛṣṇa","italics":[{"start":0,"length":5,"italic":true}]},
+    {"id":"selected-word","kind":"selection","input":"krsna","output":"kṛṣṇa","italics":[{"start":0,"length":5,"italic":true}]},
+    {"id":"selected-passage","kind":"selection","input":"prasada and Krsna.","output":"prasāda and Kṛṣṇa.","italics":[{"start":0,"length":7,"italic":true},{"start":12,"length":5,"italic":false}]},
+    {"id":"mixed-format","kind":"selection","input":"krsna and prasada","output":"kṛṣṇa and prasāda","mixed":true,"italics":[{"start":0,"length":5,"italic":true},{"start":10,"length":7,"italic":true}]},
+    {"id":"format-only","kind":"caret","input":"bhakti","output":"bhakti","italics":[{"start":0,"length":6,"italic":true}]},
+    {"id":"existing-deletion","kind":"selection","input":"krsna","seed":"krXsna","deletion":2,"output":"kṛṣṇa","italics":[{"start":0,"length":5,"italic":true}]},
+    {"id":"length-changing","kind":"selection","input":"Krishna","output":"Kṛṣṇa","italics":[{"start":0,"length":5,"italic":false}]},
+    {"id":"character-style","kind":"selection","input":"krsna","output":"kṛṣṇa","character_style":true,"italics":[{"start":0,"length":5,"italic":true}]},
+    {"id":"mixed-word","kind":"selection","input":"krsna","output":"kṛṣṇa","mixed":true,"italics":[{"start":0,"length":5,"italic":true}]}
+  ]
+}

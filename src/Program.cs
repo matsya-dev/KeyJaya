@@ -30,6 +30,12 @@ namespace KeyJaya
         [STAThread]
         public static int Main(string[] args)
         {
+            // The UIA event tracker must never be initialized in the resident.
+            // Its helper neither acquires the resident mutex nor loads a profile.
+            if (args.Length == 1 && args[0] == WordFocusMonitor.Argument)
+                return WordFocusMonitor.HelperMain();
+            if (args.Length == 1 && args[0] == ClipboardSnapshot.Argument)
+                return ClipboardSnapshot.HelperMain();
             string root = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar)).FullName;
             if (args.Length > 1 && args[0] == "--root")
                 root = Path.GetFullPath(args[1]);
