@@ -12,6 +12,15 @@ namespace KeyJaya
 {
     public static class Program
     {
+        internal static void WaitForParent(Stream pipe)
+        {
+            // Redirected input can begin with an encoding preamble. Bytes do
+            // not mean the parent exited; only EOF or a broken pipe ends its lease.
+            while (pipe.ReadByte() != -1)
+            {
+            }
+        }
+
         // GUI executables may have redirected streams without an attached console.
         // Read/write UTF-8 streams directly instead of changing the console code page.
         static int ConvertInput(string root, string mode, bool itrans)

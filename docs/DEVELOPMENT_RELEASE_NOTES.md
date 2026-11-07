@@ -1,11 +1,16 @@
 # KeyJaya 1.9.10 release notes
 
 Changes since **1.9.9**, prepared on **1 November 2026**.
+Helper lifetime and UTF-8 pipe fixes were added on **7 November 2026** before publication.
 Windows x64 with .NET Framework 4.8. The installer is unsigned.
 
 This GitHub release also includes the 1.9.8 and 1.9.9 changes documented below;
 the previous published GitHub release was 1.9.7.
 
+- Word-focus and clipboard helpers now wait for actual parent-pipe closure,
+  ignoring redirected-input encoding preambles. UTF-8 Windows startup bytes
+  can no longer be mistaken for parent exit. Isolated pipe regressions cover
+  preambles, payload and EOF; the earlier one-byte watcher fails those checks.
 - Word comment replies can be found in the verified Word frame when the native
   editing host omits them. Exact editor/runtime identity, native host, live focus
   and ownership remain required. Recovery gives startup and in-flight discovery
@@ -28,12 +33,15 @@ the previous published GitHub release was 1.9.7.
   installed-settings preservation pass. Same-source timings do not establish
   a speed improvement; physical-hook evidence remains separate.
 
-The versioned build passes all **44 isolated suites / 26,999,576 assertions**,
+The 1 November versioned build passed all **44 isolated suites / 26,999,576 assertions**,
 the strict source/data audit, compiled-app checks and engine budgets. Disposable
 clean-install, edited-trigger upgrade, exact 1.9.9 upgrade and complete rollback
 checks pass, preserving configuration, custom triggers and learned spelling
 preferences. All 38 packaged file hashes and the embedded installer payload are
-verified. The compiled normal registration path assigns Windows' version label
+verified. The 7 November helper rebuild adds nine pipe-lifetime assertions and
+passes focused, compiled-app, compatibility, audit and isolated installation/
+upgrade/rollback checks. Its full Windows CI results accompany the tagged source.
+The compiled normal registration path assigns Windows' version label
 to 1.9.10; isolated test mode deliberately leaves live registration untouched.
 
 The user's local installation of 1.9.10 passed its smoke check, with existing

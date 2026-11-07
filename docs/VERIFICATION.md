@@ -3,20 +3,42 @@
 ## Release publication inputs — 7 November 2026
 
 The user authorized the release commit, `v1.9.10` tag, push and GitHub publication.
-Publication reuses the exact installer verified on 1 November. Initial preflight
-matched all **158 frozen release inputs**, the installer and checksum file.
+Initial publication preflight matched all **158 frozen 1 November release inputs**,
+the installer and checksum file.
 Fresh GitHub CI then exposed a private test-pipe encoding defect: `Console.In`
 retained the UTF-8 BOM emitted by the parent writer, so the synthetic helper
 ignored its first command. Preparing metadata before readiness alone did not
 resolve that failure. A forced-BOM regression reproduces it locally; the fixture
-now uses a BOM-aware reader. Both changes affect only the test helper; the
-application sources and verified installer remain unchanged.
-No rebuild, installed-app update or additional live editor test is involved.
-The installer SHA-256 is
-`6235bdf51bca8dd86fe954c3cf9a3c207df44a710ed97dbfacc09a2526eb1248`.
+now uses a BOM-aware reader. The same defect in the hidden native Edit test host
+is covered by forced-preamble command input and a BOM-aware reader too.
+
+A hidden, isolated Framework probe also confirmed that a UTF-8 parent writer
+emits byte 239 before any command. Production helpers previously treated their
+first input byte as parent exit. The user separately authorized a runtime fix
+and rebuilt installer: both helpers now use `Program.WaitForParent` to drain
+startup bytes and await EOF or pipe failure. The private recovery fixture uses
+the same routine. Nine deterministic pipe checks cover empty input, preambles,
+payload and actual closure; a one-byte-watcher mutation fails the regression.
+The focused suites pass **818,202 assertions** (1,483 Word snapshot and 816,719
+native-key assertions), including **101 focus-monitor contracts**.
+
+The rebuilt installer passes 19 compiled-app checks, all 38 payload file hashes,
+embedded-payload verification, clean installation and 56-file failure rollback.
+The retained 1.9.9 upgrade restores 46 hashes on failure, preserves eight config
+and five state files on success, and passes 17 runtime/preference checks.
+The 1,944-check strict audit, 26 Python tests and 129 C# 5 formatting/token checks
+pass. Full Word body/comment/recovery preparation and self-tests pass without
+desktop access. Full 44-suite Windows verification for the tagged source is
+recorded in the repository's [Windows checks](https://github.com/matsya-dev/KeyJaya/actions/workflows/ci.yml).
+The earlier native Word checks below cover the editing code; no new live Word
+test, installed-app update or settings write is part of this helper rebuild.
+Its installer SHA-256 is
+`3dce47e58b849d4d2fd2e134b366a39c1a6ef5ce72515459dab433f18d661d65`.
 The installer and `SHA256SUMS.txt` belong to the
 [1.9.10 release](https://github.com/matsya-dev/KeyJaya/releases/tag/v1.9.10).
-Local publication evidence is retained in `out/release-1.9.10/publication`.
+Local evidence is retained in `out/release-1.9.10/publication` and
+`out/release-1.9.10/utf8-parent-rebuild`. The superseded installer is retained
+separately; the rebuilt checksum identifies the publication candidate.
 
 ## User installation confirmation — 1 November 2026
 

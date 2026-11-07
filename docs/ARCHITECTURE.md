@@ -225,6 +225,12 @@ preferences stay running. A permanently stalled provider call in the resident
 remains outside that recovery guarantee, but it no longer blocks the pipe reader.
 Neither the resident nor helper resumes an unhandled Framework exception.
 
+Word-focus and clipboard helpers retain their parent lease until the redirected
+input pipe reaches EOF or fails. `Program.WaitForParent` drains any encoding
+preamble or other startup bytes; receipt of a byte alone never means the parent
+exited. Each watcher owns and closes its stream. The private silent-helper
+fixture uses the same lifetime routine.
+
 Resident clipboard text reads use the bounded Win32 Unicode reader with stable
 sequence checks. An unavailable/busy/malformed read cannot become readable empty
 cycling evidence. Full-format backups use `--capture-clipboard` before profile,

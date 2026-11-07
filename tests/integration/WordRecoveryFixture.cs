@@ -155,7 +155,8 @@ namespace KeyJaya
                 {
                     output.AutoFlush = true;
                     output.WriteLine("ready");
-                    Console.OpenStandardInput().ReadByte();
+                    using (var pipe = Console.OpenStandardInput())
+                        Program.WaitForParent(pipe);
                 }
             }, Program.Main);
         }

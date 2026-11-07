@@ -1,3 +1,27 @@
+# UTF-8 helper lifetime and release rebuild — 7 November 2026
+
+Fresh publication CI exposed UTF-8 BOM input in two private command fixtures.
+The focus and hidden native Edit fixtures now use BOM-aware readers; forced-BOM
+input reproduces the old failures on ANSI hosts. Moving serializer preparation
+before readiness alone did not resolve the first failure.
+
+A hidden Framework probe then confirmed a production lifetime problem: a UTF-8
+parent's redirected writer sends a preamble before any command. Reading one byte
+was therefore insufficient proof of parent death. After separate user approval,
+the two production helpers and private recovery fixture use a shared EOF waiter.
+Nine deterministic checks require the lease to survive preamble/payload input
+and end only at actual EOF. A private old-watcher mutation fails as intended.
+
+The focused suites pass 818,202 assertions, including 101 focus-monitor checks.
+The rebuilt installer passes compiled-app, payload, clean-install, retained-1.9.9
+upgrade and complete rollback checks. Strict audit, C# 5, Python and Word fixture
+preparation pass. Full CI verification is recorded with the tagged source.
+Evidence is under `out/release-1.9.10/utf8-parent-rebuild` and the adjacent
+`publication` folder. Installed engine/config hashes were recorded before work;
+no resident restart, settings copy-back or live editor test is part of this work.
+The earlier installed 1.9.10 binary remains the user's current installation;
+publication of the rebuilt installer does not update it.
+
 # User installation confirmation — 1 November 2026
 
 The user reports everything seems to work after the normal installer/smoke-check

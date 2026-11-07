@@ -13,6 +13,25 @@ namespace KeyJaya
     internal static class FocusMonitorTests
     {
         static int assertions;
+        sealed class ParentPipeStream : MemoryStream
+        {
+            internal readonly ManualResetEvent Waiting = new ManualResetEvent(false);
+            internal readonly ManualResetEvent Closed = new ManualResetEvent(false);
+            internal ParentPipeStream(byte[] bytes) : base(bytes)
+            {
+            }
+
+            public override int ReadByte()
+            {
+                int value = base.ReadByte();
+                if (value >= 0)
+                    return value;
+                Waiting.Set();
+                Closed.WaitOne();
+                return -1;
+            }
+        }
+
         static void Check(bool value, string message)
         {
             if (!value)
@@ -132,6 +151,65 @@ namespace KeyJaya
         public static int Run()
         {
             assertions = 0;
+            foreach (byte[] bytes in new[]
+            {
+                new byte[0],
+                Encoding.UTF8.GetPreamble(),
+                new byte[]
+                {
+                    239,
+                    187,
+                    191,
+                    110,
+                    111,
+                    116,
+                    105,
+                    99,
+                    101,
+                    10
+                }
+            }
+
+            )
+                using (var pipe = new ParentPipeStream(bytes))
+                using (var done = new ManualResetEvent(false))
+                {
+                    Exception failure = null;
+                    var watcher = new Thread(() =>
+                    {
+                        try
+                        {
+                            Program.WaitForParent(pipe);
+                        }
+                        catch (Exception error)
+                        {
+                            failure = error;
+                        }
+                        finally
+                        {
+                            done.Set();
+                        }
+                    })
+                    {
+                        IsBackground = true
+                    };
+                    watcher.Start();
+                    try
+                    {
+                        Check(pipe.Waiting.WaitOne(2000), "parent lease consumes every startup byte before awaiting EOF");
+                        Check(!done.WaitOne(0), "an open parent pipe keeps the helper alive after a preamble or payload");
+                        pipe.Closed.Set();
+                        Check(watcher.Join(1000) && failure == null, "actual parent EOF releases the helper promptly");
+                    }
+                    finally
+                    {
+                        pipe.Closed.Set();
+                        watcher.Join(1000);
+                        pipe.Waiting.Dispose();
+                        pipe.Closed.Dispose();
+                    }
+                }
+
             Check(WordFocusMonitor.FailureCount(0, TimeSpan.Zero) == 1, "first startup failure begins a retry streak");
             Check(WordFocusMonitor.FailureCount(3, TimeSpan.FromSeconds(59)) == 4, "rapid failures retain bounded backoff");
             Check(WordFocusMonitor.FailureCount(4, TimeSpan.FromMinutes(1)) == 1, "a healthy minute resets the next recovery delay");
@@ -400,6 +478,7 @@ namespace KeyJaya
                     quietChild.StandardInput.BaseStream.Write(preamble, 0, preamble.Length);
                     quietChild.StandardInput.BaseStream.Flush();
                 }
+
                 recovery.RequestRecovery();
                 quietChild.StandardInput.WriteLine("notice");
                 Check(Until(() => Volatile.Read(ref recoveryNotices) == 1), "a fresh event can repair focus during the settling interval");

@@ -2,7 +2,9 @@
 // search-control fallback. Hidden owned windows only; no focus, keys or clipboard.
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -41,8 +43,9 @@ namespace KeyJaya
                 Console.Out.Flush();
                 var reader = new Thread(() =>
                 {
+                    var input = new StreamReader(Console.OpenStandardInput(), Console.InputEncoding, true);
                     string command;
-                    while ((command = Console.ReadLine()) != null)
+                    while ((command = input.ReadLine()) != null)
                     {
                         if (command == "pause")
                         {
@@ -230,6 +233,15 @@ namespace KeyJaya
                     string ignored;
                     Check(!Native.TryReadEditText(new IntPtr(long.Parse(handles[2])), out ignored) && ignored == null, "non-edit host cannot become an editable target");
                     Check(!Native.TryReadEditText(IntPtr.Zero, out ignored) && ignored == null, "invalid handle is unavailable rather than blank");
+                    // Exercise the UTF-8 preamble used by CI console hosts even
+                    // when this parent runs with an ANSI input encoding.
+                    if (child.StandardInput.Encoding.GetPreamble().Length == 0)
+                    {
+                        byte[] preamble = Encoding.UTF8.GetPreamble();
+                        child.StandardInput.BaseStream.Write(preamble, 0, preamble.Length);
+                        child.StandardInput.BaseStream.Flush();
+                    }
+
                     child.StandardInput.WriteLine("pause");
                     Check(Line(child) == "paused", "only the owned host is stalled");
                     var clock = Stopwatch.StartNew();

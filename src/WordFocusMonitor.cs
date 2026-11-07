@@ -603,7 +603,8 @@ namespace KeyJaya
                 {
                     try
                     {
-                        Console.OpenStandardInput().ReadByte();
+                        using (var pipe = Console.OpenStandardInput())
+                            Program.WaitForParent(pipe);
                     }
                     catch (IOException)
                     {

@@ -4,7 +4,7 @@
     "src/ApplicationShortcuts.cs": "4affac9b8d205d255af33ed812061a3a4344aea46df6369813d2ecbdbcbb18f8",
     "src/AssemblyInfo.cs": "c0a6a92daf25d1a2b3f334c92db0710e72fb3cd931b7c9bb169c3c414edb6a45",
     "src/CheatSheet.cs": "a0101f9f3c3408d90c55765261b2a1e6aacfd8c3f180a113b50bfcbbd44b9fb5",
-    "src/ClipboardSnapshot.cs": "777dcf613dd925156f2a176b2cf4f903450273f66abc62d04547b0652abbe428",
+    "src/ClipboardSnapshot.cs": "fbfa022c1806479f63d1d3f70bd468bdfa9aea5a0dd3c5423c9ad0a00e07edf5",
     "src/Configuration.cs": "02d1491af8e98b2ba8704416af1753d3e44c33f78456b779b7a470b1edbc12e5",
     "src/ControlItalics.cs": "7ad954d74580125e1faae80d9579ff7b0db5feb6974ff765210e0b7bd9e921a2",
     "src/CopiedConversion.cs": "951efd487cd09f5ad9a73964d015e8db047bcf33c5125d70c13d1c9d3a3d7233",
@@ -24,7 +24,7 @@
     "src/LaunchRequests.cs": "d323fca0c5a56fd0dec15c7b1e704f8dc68620b32a21960d34afdd6eefa5ce34",
     "src/Native.cs": "d6cdb9d26a0af073233b245c39a4c89f9163e2233ec9a904d37b5d30b1570577",
     "src/Number.cs": "c4068909050cc1803b456d94246fa066d3be72785e4165d28e4eeb476ae6d901",
-    "src/Program.cs": "c6d3db12980946ffdb77acb91300812db225e04e9495ce287effbdfb8651c1bd",
+    "src/Program.cs": "f3233d377e3752456b0d2c4e131fb2d0ab08d50e64e190f0f60a31dd2d2507d8",
     "src/ResidentInput.cs": "0e8e520c60f35bdfdf15a3d64eb17b23e613d5176cd5cb7e1d05867df1bbab90",
     "src/ResidentReplacement.cs": "fccd340a5a4bba1e8610cb53c4f0ce156aa14275e377e82cb47f612ea99b279e",
     "src/Runtime.cs": "b63943ed19e0c3d4e136f756c246bebcce9542b8fc54ef9b624878539947c8fe",
@@ -45,7 +45,7 @@
     "src/WindowAppearance.cs": "442c6e2aa293ca325f9365daac0110dcd54139f20c3be0280e436cb74619ab13",
     "src/WordApplication.cs": "306bbb2a989ebe3d0b6b862d4163f38cfb42f0de44f688e567532284494618a8",
     "src/WordCommentFocus.cs": "8b51a1cda98c898a83f9c3e21e76ff5539f3990946d2df65992132b6f2bb7767",
-    "src/WordFocusMonitor.cs": "beb6d1cffa1656b755999901534b999ef8fb781eec3694bd17c7f187256e1db1",
+    "src/WordFocusMonitor.cs": "3442acdfaf89b24e95928295c274b6051a649adae43da70d15e115035f4cf8ee",
     "src/WordNativeTiming.cs": "e2e0eb6c575ac89f576bf5d7588dcfafb348e2e56775c02d62abf63998a39410",
     "src/WordSearchField.cs": "34ead08753dde9e015ed021d54e586a29207452a064e96018ed6f7e2b113f84f",
     "src/WordSelection.cs": "0ab429106a288282ed9972e69a16e1353b5b5a00f54041cf69926093c80a3580",
@@ -58,6 +58,7 @@
     "Give startup and in-flight focus lookups bounded recovery grace so healthy helpers are not retired before valid results finish; retain the 150 ms caller wait.",
     "Rediscover rejected cached comment providers and cancel pending helper recovery only after current-session live validation.",
     "Retry ambiguous empty OLE clipboard views only on the unchanged sequence and restore format-free backups with an ownership-checked native clear.",
-    "Distinguish ordinary clipboard refusal from helper failure without recording clipboard contents or relaxing unsupported-format and newer-item safeguards."
+    "Distinguish ordinary clipboard refusal from helper failure without recording clipboard contents or relaxing unsupported-format and newer-item safeguards.",
+    "Keep Word-focus and clipboard helpers alive through redirected-input startup preambles; only EOF or a broken parent pipe ends their lifetime."
   ]
 }

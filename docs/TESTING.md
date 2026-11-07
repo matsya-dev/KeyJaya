@@ -1,11 +1,20 @@
 # Testing KeyJaya
 
-The versioned **1.9.10** release candidate passes all **44 isolated suites /
+The 1 November versioned **1.9.10** candidate passed all **44 isolated suites /
 26,999,576 assertions**, zero failures. Compiled-app, strict source/data audit,
 C# 5, Python, pinned-source, engine-budget and disposable installer clean/upgrade/
 rollback checks pass. Its runtime differs from the native-tested source only in
 version identity. The full results and packaging limits are recorded in
 [Verification](VERIFICATION.md).
+
+The 7 November helper revision adds nine deterministic parent-pipe checks:
+startup preambles and payload do not end the lease, while EOF releases it.
+A one-byte-watcher mutation fails. The focus and native Edit fixtures also
+exercise UTF-8 BOM command input even on ANSI hosts, and decode that input
+without losing the first command. The focused pair passes **818,202 assertions**;
+the full tagged-source matrix runs in both Windows PowerShell and PowerShell 7
+on GitHub. These tests use in-memory pipes, private processes and hidden owned
+controls, with no live Word or clipboard access.
 
 The authorized 1 November native session passes two full comment matrices with
 the same resident (**66 actions / 1,774 checks**), the private silent-helper
