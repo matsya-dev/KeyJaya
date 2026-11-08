@@ -3,25 +3,39 @@
 Builds a clean application tree and, unless AppOnly is set, its installer.
 .DESCRIPTION
 Compilation and packaging only: never launches a resident or changes the installed profile.
-A prior development output is archived so obsolete files cannot leak into the payload.
+A private stage replaces verified, unchanged development output after success.
+Temporary stages and prior output are removed; reports remain under out/reports.
 .PARAMETER AppOnly
 Compile the resident and uninstaller without creating a payload ZIP or setup executable.
 .PARAMETER Python
 Python 3.11+ executable used only for payload packaging.
+.PARAMETER KeepArtifacts
+Keep the complete staging workspace for explicit investigation.
 #>
 param(
     [switch]$AppOnly,
-    [string]$Python = 'python'
+    [string]$Python = 'python',
+    [switch]$KeepArtifacts
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 . (Join-Path $root 'build-common.ps1')
+. (Join-Path $root 'tools/workspace.ps1')
+. (Join-Path $root 'tools/build-output.ps1')
 if (!(Test-Path -LiteralPath $compiler)) {
     throw '.NET Framework 4.8 and its x64 C# compiler are required.'
 }
 
-$app = Join-Path $root 'out/app'
+$out = Assert-KjOutputPath $root (Join-Path $root 'out/build.lock')
+New-Item -ItemType Directory -Path (Split-Path $out -Parent) -Force | Out-Null
+$buildLock = [IO.File]::Open($out, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+$work = $null
+$success = $false
+try {
+$work = New-KjWork $root 'build' -KeepArtifacts:$KeepArtifacts
+Set-KjInputs $work (@($runtime) + @($setupSources) + @((Join-Path $root 'build.ps1'),(Join-Path $root 'build-common.ps1'),(Join-Path $root 'setup-build.ps1'),(Join-Path $root 'package.py'),(Join-Path $root 'data/manifest.json')))
+$app = Join-Path $work.Path 'app'
 $exclusions = @(Get-Content -LiteralPath (Join-Path $root 'assets/distribution-exclusions.txt') -Encoding UTF8 |
     ForEach-Object { $_.Trim() } | Where-Object { $_ -and !$_.StartsWith('#') })
 foreach ($relative in $exclusions) {
@@ -31,19 +45,6 @@ foreach ($relative in $exclusions) {
         [IO.Path]::GetExtension($leaf).ToLowerInvariant() -in @('.dat', '.idx', '.hash', '.tsv', '.ini', '.exe', '.dll', '.ico')) {
         throw ('Unsafe distribution exclusion: ' + $relative)
     }
-}
-if (Test-Path -LiteralPath $app) {
-    $out = [IO.Path]::GetFullPath((Join-Path $root 'out')) + [IO.Path]::DirectorySeparatorChar
-    $previous = Join-Path $root ('out/previous-app-' + [Guid]::NewGuid().ToString('N'))
-    foreach ($target in @($app, $previous)) {
-        if (![IO.Path]::GetFullPath($target).StartsWith($out, [StringComparison]::OrdinalIgnoreCase)) {
-            throw 'Build output outside out/.'
-        }
-    }
-    if ((Get-Item -LiteralPath $app).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw 'Build output must not be a linked directory.'
-    }
-    Move-Item -LiteralPath $app -Destination $previous
 }
 
 New-Item -ItemType Directory -Path $app, (Join-Path $app 'engine') -Force | Out-Null
@@ -85,8 +86,8 @@ $appArguments = $common + $references + @(
     ('/win32icon:' + (Join-Path $root 'assets/keyjaya.ico'))
     ('/out:' + (Join-Path $app 'engine/keyjaya-app.exe'))
 ) + $runtime
-& $compiler @appArguments
-if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed' }
+$compile = Invoke-KjLogged $work $compiler $appArguments 'app-compiler.txt'
+if ($compile.ExitCode -ne 0) { throw 'Application compilation failed' }
 Copy-Item -LiteralPath (Join-Path $root 'src/keyjaya-app.exe.config') -Destination (Join-Path $app 'engine/keyjaya-app.exe.config') -Force
 
 $uninstallArguments = $common + @(
@@ -99,17 +100,25 @@ $uninstallArguments = $common + @(
     (Join-Path $root 'src/Uninstall.cs')
     (Join-Path $root 'src/ApplicationShortcuts.cs')
 )
-& $compiler @uninstallArguments
-if ($LASTEXITCODE -ne 0) { throw 'Uninstaller compilation failed' }
+$compile = Invoke-KjLogged $work $compiler $uninstallArguments 'uninstall-compiler.txt'
+if ($compile.ExitCode -ne 0) { throw 'Uninstaller compilation failed' }
 if ($AppOnly) {
-    Write-Output ('Built application: ' + (Join-Path $app 'engine/keyjaya-app.exe'))
+    Publish-KjBuild $work $app
+    $success = $true
+    Write-Output ('Built application: ' + (Join-Path $root 'out/app/engine/keyjaya-app.exe'))
     return
 }
 
-& $Python (Join-Path $root 'package.py') --release $app --output (Join-Path $root 'out/payload.zip')
-if ($LASTEXITCODE -ne 0) { throw 'Payload packaging failed; Python 3.11 or newer is required.' }
+$payload = Join-Path $work.Path 'payload.zip'
+$pack = Invoke-KjLogged $work $Python @((Join-Path $root 'package.py'),'--release',$app,'--output',$payload) 'package.txt'
+if ($pack.ExitCode -ne 0) { throw 'Payload packaging failed; Python 3.11 or newer is required.' }
 $version = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
-$installer = Join-Path $root ('out/KeyJaya-Setup-v' + $version + '.exe')
-& (Join-Path $root 'setup-build.ps1') -ReleaseRoot $app -PayloadPath (Join-Path $root 'out/payload.zip') -OutputPath $installer
+$installer = Join-Path $work.Path ('KeyJaya-Setup-v' + $version + '.exe')
+& (Join-Path $root 'setup-build.ps1') -ReleaseRoot $app -PayloadPath $payload -OutputPath $installer
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-Write-Output ('Built installer: ' + $installer)
+Publish-KjBuild $work $app $payload $installer $version
+$success = $true
+Write-Output ('Built installer: ' + (Join-Path $root ('out/KeyJaya-Setup-v' + $version + '.exe')))
+} finally {
+    try { if ($work) { Complete-KjWork $work $success } } finally { $buildLock.Dispose() }
+}

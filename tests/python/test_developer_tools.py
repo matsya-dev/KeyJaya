@@ -420,6 +420,32 @@ class BuildVerificationTests(FixtureTest):
             with self.assertRaisesRegex(ValueError, "Rollback changed"):
                 verify.verify_build(self.root, Path("out/install-fixture"))
 
+    def test_default_verifier_removes_installation_and_sibling_backups(self):
+        self.prepare_payload()
+
+        def install_fixture(installer, target, fail_after_swap=False):
+            if not target.exists():
+                shutil.copytree(self.root / "out/app", target)
+            else:
+                backup = target.with_name(target.name + ".backup-fixture")
+                shutil.copytree(target, backup, dirs_exist_ok=True)
+
+        with patch.object(verify, "install_once", side_effect=install_fixture):
+            verify.run_verification(self.root)
+        self.assertEqual(list((self.root / "out/w").iterdir()), [])
+        self.assertTrue((self.root / "out/verification/build-results.json").is_file())
+        self.assertEqual((self.root / "out/app/VERSION").read_text(), "1.2.3")
+
+    def test_failed_default_verifier_keeps_evidence_and_removes_fixture(self):
+        self.prepare_payload()
+        with patch.object(verify, "install_once", side_effect=ValueError("prepared installation failed")):
+            with self.assertRaisesRegex(ValueError, "prepared installation failed"):
+                verify.run_verification(self.root)
+        self.assertEqual(list((self.root / "out/w").iterdir()), [])
+        evidence = list((self.root / "out/reports/package").iterdir())[0]
+        self.assertIn("prepared installation failed", (evidence / "failure.json").read_text())
+        self.assertTrue((evidence / "failure.zip").is_file())
+
     def test_fault_must_reach_the_post_swap_checkpoint(self):
         import subprocess
 

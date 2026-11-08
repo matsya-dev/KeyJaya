@@ -171,7 +171,7 @@ namespace KeyJaya
 
             )
                 Equal(null, font.Resolve(name), "incompatible legacy font skipped");
-            string config = Path.Combine(Path.GetTempPath(), "KeyJaya-font-fixture-" + Guid.NewGuid().ToString("N"));
+            string config = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "KeyJaya-font-fixture-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(config, "config"));
             string file = Path.Combine(config, "config/font-encoding.tsv");
             File.WriteAllText(file, "# example\nMy Legacy Font\tbalaram\nBalaram\tunicode\nArial\tignore\n");

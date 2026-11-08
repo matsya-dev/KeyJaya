@@ -1,3 +1,30 @@
+# Automatic scratch cleanup — 8 November 2026
+
+Development tooling now owns its scratch directories, verifies ownership and
+paths before deletion, and keeps reports outside those directories. Successful
+suites remove their fixture and neighboring artifacts before the next suite;
+failures retain verified compact snapshots. Repeated builds replace only
+unchanged, receipted output and restore the prior build on failed promotion.
+Unknown, edited, linked, active or explicitly kept output is preserved. See
+[Output cleanup](OUTPUT_CLEANUP.md) for retention limits and inspection options.
+
+Verification passes all **44 isolated suites / 26,999,585 assertions**, **35
+Python tests** (including the PowerShell contracts in both Windows shells with
+real junctions), repeated app-only builds, both 19-check compiled-app probes,
+25 isolated setup-library checks and 17 engine benchmark cases. Final safety
+refinements pass the targeted checks plus two kept suites / 126 assertions and
+the PowerShell 7 smoke suite / 82 assertions. Kept fixtures are verified, then
+explicitly retired. The strict audit, dictionary-source verification and all
+129 C# formatting/token checks pass. Production C#, dictionary/configuration
+bytes, version and release baseline remain unchanged.
+
+Full-suite evidence is pinned under
+`out/reports/tests/bf84288efbd946a8930b9ff3984df91c`; `out/cleanup-verification`
+holds supporting logs, frozen full-run input hashes and preservation proof.
+There are no live editor tests, desktop input, installed-app restarts/settings
+writes, installer builds, pushes or releases in this work. Installer behavior in
+the Python tests is mocked; the setup check invokes a private test library.
+
 # UTF-8 helper lifetime and release rebuild — 7 November 2026
 
 Fresh publication CI exposed UTF-8 BOM input in two private command fixtures.

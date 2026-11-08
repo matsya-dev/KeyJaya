@@ -1,3 +1,16 @@
+# Unreleased development tooling — 8 November 2026
+
+- Builds and isolated tests automatically remove their owned temporary stages,
+  copied dictionaries, compiled runners and test installation/rollback copies.
+  Repeated builds no longer accumulate `previous-app-*` trees.
+- Reports keep the latest five completed runs and the latest failure, with
+  verified compact failure snapshots. Edited evidence and explicit inspection
+  fixtures remain protected. See [Output cleanup](OUTPUT_CLEANUP.md).
+- Path, ownership, junction, active-run and last-good-build safeguards have
+  isolated regressions in both Windows shells. The full 44-suite run passes.
+  Installed files/settings, production code and release identity are unchanged;
+  these tooling changes are not part of the already published 1.9.10 installer.
+
 # KeyJaya 1.9.10 release notes
 
 Changes since **1.9.9**, prepared on **1 November 2026**.

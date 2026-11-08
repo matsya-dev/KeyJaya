@@ -8,6 +8,9 @@ Start with [the code map](docs/ARCHITECTURE.md),
 [build instructions](docs/BUILDING.md), and [testing guide](docs/TESTING.md).
 Builds and tests write beneath ignored `out/`; they do not update an installed
 profile. Use separate disposable documents for physical editor tests.
+Automatic [scratch cleanup and evidence retention](docs/OUTPUT_CLEANUP.md) keep
+repeated builds and isolated tests bounded. Use `-KeepArtifacts` only when a full
+fixture is needed for inspection.
 
 ## Working on code
 

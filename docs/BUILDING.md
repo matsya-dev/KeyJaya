@@ -56,8 +56,11 @@ Editable trigger defaults are copied from `assets/short-trigger-defaults.yml`;
 factory restoration and upgrade additions use that same source. The seven old
 customization templates are replaced by the sectioned `customizations.ini`.
 Existing TSV files are still accepted without being rewritten. Each build uses a
-fresh `out/app`; an earlier output is preserved under `out/previous-app-*` so
-obsolete defaults cannot leak into a new package.
+fresh private stage, then publishes `out/app` after successful compilation and
+packaging. The previous owned app tree is removed after replacement; failed
+promotion restores it. Edited/unmarked outputs are preserved and replacement is
+refused. See [cleanup and evidence retention](OUTPUT_CLEANUP.md) for ownership,
+bounded reports and `-KeepArtifacts`.
 
 Keep the `.exe.config` beside the resident executable. The window DPI behavior
 depends on it and `src/runtime.manifest`.
@@ -77,9 +80,11 @@ its hashes. `tools/audit_project.py` checks these, source provenance and exclusi
 Dictionary/source licenses are described in `THIRD_PARTY_NOTICES.md`.
 
 After building, `python tools/verify_build.py` checks all packaged bytes and runs
-clean-install/upgrade checks using only `out/verification/install`. It refuses to
-overwrite an existing verification installation. These checks do not affect the
-installed app or Windows startup registration.
+clean-install/upgrade checks in a private disposable installation. It keeps the
+verification report and removes the installation and backups, including after
+failure. `--keep-artifacts` retains a full inspection fixture; an explicit
+`--target` requires that option and must be fresh beneath `out/`. These checks do
+not affect the installed app or Windows startup registration.
 
 This workflow reproduces the app from its source/data inputs. The legacy Framework
 compiler embeds build-specific PE metadata, so independently compiled executables

@@ -12,12 +12,18 @@ Fail when a warm p95 exceeds the checked-in 150 ms engine budget.
 #>
 param(
     [ValidateRange(20, 10000)][int]$Iterations = 301,
-    [switch]$Check
+    [switch]$Check,
+    [switch]$KeepArtifacts
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $root 'build-common.ps1')
-$output = Join-Path $root ('out/benchmarks/run-' + [Guid]::NewGuid().ToString('N'))
+. (Join-Path $root 'tools/workspace.ps1')
+$work = New-KjWork $root 'benchmarks' -KeepArtifacts:$KeepArtifacts
+$success = $false
+try {
+$output = $work.Path
+Set-KjInputs $work (@($runtime) + @((Join-Path $root 'tools/benchmark.ps1'),(Join-Path $root 'tests/benchmarks/ConversionBenchmarks.cs'),(Join-Path $root 'tests/benchmarks/budgets.json'),(Join-Path $root 'data/manifest.json')))
 $fixture = Join-Path $output 'fixture'
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
 foreach ($name in @('assets', 'data')) {
@@ -30,11 +36,11 @@ $arguments = @('/nologo', '/optimize+', '/platform:x64', '/codepage:65001', '/r:
     '/main:KeyJaya.ConversionBenchmarks'
     ('/out:' + $runner)
 ) + $runtime + (Join-Path $root 'tests/benchmarks/ConversionBenchmarks.cs')
-& $compiler @arguments
-if ($LASTEXITCODE -ne 0) { throw 'Benchmark compilation failed' }
-$report = Join-Path $output 'results.json'
-& $runner $fixture $report (Join-Path $root 'tests/benchmarks/budgets.json') $Iterations
-$code = $LASTEXITCODE
+$compile = Invoke-KjLogged $work $compiler $arguments 'compiler.txt'
+if ($compile.ExitCode -ne 0) { throw 'Benchmark compilation failed' }
+$report = Join-Path $work.Evidence 'results.json'
+$run = Invoke-KjLogged $work $runner @($fixture,$report,(Join-Path $root 'tests/benchmarks/budgets.json'),$Iterations) 'benchmark.txt'
+$code = $run.ExitCode
 if ($code -ne 0 -and $code -ne 2) { throw 'Benchmark correctness or execution failed' }
 $results = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
 $columns = @(
@@ -47,3 +53,6 @@ $columns = @(
 $results.cases | Sort-Object p95_ms -Descending | Format-Table -Property $columns -AutoSize
 Write-Output ('Report: ' + $report)
 if ($Check -and $code -eq 2) { throw 'Conversion-engine speed budget exceeded; inspect the report' }
+
+$success = $true
+} finally { Complete-KjWork $work $success }

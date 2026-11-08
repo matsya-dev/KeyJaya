@@ -7,6 +7,11 @@ lists the conversion and resident compilation inputs; `setup-build.ps1` lists th
 installer inputs. Explicit source lists make the contents of each executable
 reviewable.
 
+Development-only `tools/workspace.ps1`, `tools/build-output.ps1` and
+`tools/temporary_workspace.py` implement [owned scratch cleanup](OUTPUT_CLEANUP.md),
+bounded evidence and guarded build publication. They are not runtime sources and
+never manage an installed profile.
+
 ## Where responsibilities live
 
 | Area | Sources | Responsibility |

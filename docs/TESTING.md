@@ -1,5 +1,13 @@
 # Testing KeyJaya
 
+Build/test runners now use [owned scratch cleanup](OUTPUT_CLEANUP.md). Successful
+suites remove their copied dictionaries and neighboring test artifacts; failures
+keep logs and a compact verified snapshot before cleanup. Reports are bounded,
+and `-KeepArtifacts` explicitly preserves a full fixture. Saved Office documents,
+live trial profiles, installed settings and unmarked historical output are not
+swept. The new cleanup regressions use synthetic roots in both Windows shells,
+including junction refusal, interrupted runs and last-good-build rollback.
+
 The 1 November versioned **1.9.10** candidate passed all **44 isolated suites /
 26,999,576 assertions**, zero failures. Compiled-app, strict source/data audit,
 C# 5, Python, pinned-source, engine-budget and disposable installer clean/upgrade/
@@ -707,11 +715,16 @@ or installation on another person's desktop. Word, InDesign, Obsidian, browser
 editors, sleep/wake, sign-in, and monitor interactions still need manual checks.
 The shorter [first-run check](FIRST_RUN_CHECK.md) is suitable for initial testers.
 
-For repeated local installer checks, use a fresh target instead of deleting an
-existing fixture:
+Repeated local installer checks clean their owned fixture automatically:
 
 ```powershell
-python tools/verify_build.py --target out/verification/another-run/install
+python tools/verify_build.py
+```
+
+For a deliberately retained inspection fixture, use a fresh target:
+
+```powershell
+python tools/verify_build.py --target out/verification/another-run/install --keep-artifacts
 ```
 
 Targets must stay beneath `out/`. Existing target directories are refused.

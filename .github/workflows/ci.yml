@@ -81,6 +81,7 @@ jobs:
         with:
           name: verification-${{ matrix.shell }}
           path: |
+            out/reports/**
             out/tests/*.txt
             out/tests/results.json
             out/benchmarks/**/results.json

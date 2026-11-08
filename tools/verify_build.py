@@ -88,7 +88,13 @@ def verify_payload(root: Path, app: Path, payload: Path) -> dict[str, str]:
 
 def fresh_target(root: Path, requested: Path) -> Path:
     """Refuse existing fixtures and every target outside the ignored output tree."""
-    target = (root / requested).resolve()
+    candidate = root / requested
+    for parent in [candidate, *candidate.parents]:
+        if parent == root:
+            break
+        if parent.exists() or parent.is_symlink():
+            require(not parent.is_symlink() and not (getattr(parent.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400), "Verification target must not contain links")
+    target = candidate.resolve()
     output = (root / "out").resolve()
     require(
         target.is_relative_to(output) and target != output,
@@ -193,16 +199,39 @@ def verify_build(root: Path, requested: Path) -> dict[str, object]:
     return summary
 
 
+def run_verification(root: Path, target: Path | None = None, keep_artifacts: bool = False):
+    if target is not None:
+        require(keep_artifacts, "Explicit targets require --keep-artifacts")
+        return verify_build(root, target)
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("keyjaya_workspace", Path(__file__).with_name("temporary_workspace.py"))
+    workspace = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(workspace)
+    sources = [p for p in [root / "tools/verify_build.py", root / "package.py", root / "data/manifest.json"] if p.is_file()]
+    with workspace.Workspace(root, keep=keep_artifacts, sources=sources) as work:
+        summary = verify_build(root, work.path / "install")
+        destination = root / "out/verification/build-results.json"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(dict(summary, evidence=str(work.evidence)), indent=2), encoding="utf-8")
+        (work.evidence / "build-results.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        print("Evidence: " + str(work.evidence))
+        return summary
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--target",
         type=Path,
-        default=ROOT / "out/verification/install",
-        help="Fresh disposable installation directory beneath out/. Existing directories are refused.",
+        default=None,
+        help="Explicit inspection fixture beneath out/; requires --keep-artifacts. Existing targets are refused.",
     )
+    parser.add_argument("--keep-artifacts", action="store_true", help="Keep the full disposable installation and backups for inspection.")
     args = parser.parse_args(argv)
-    verify_build(ROOT, args.target)
+    if args.target is not None and not args.keep_artifacts:
+        parser.error("--target requires --keep-artifacts; omit both for automatic cleanup")
+    run_verification(ROOT, args.target, args.keep_artifacts)
 
 
 if __name__ == "__main__":

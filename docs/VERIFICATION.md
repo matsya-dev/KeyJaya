@@ -1,5 +1,38 @@
 # Release verification
 
+## Development-output cleanup — 8 November 2026 (unreleased tooling)
+
+The [automatic cleanup policy](OUTPUT_CLEANUP.md) applies to normal builds,
+isolated suites, engine benchmarks, compiled-app probes, setup-transaction
+checks and the Python installer verifier. It retains bounded reports, verified
+compact failure evidence and explicit inspection fixtures. Existing release
+archives, live trial profiles, saved Office documents and unknown/edited output
+are preserved. No production C# source, dictionary, factory preference, accepted
+baseline or version identity changed.
+
+- All **44 isolated suites / 26,999,585 assertions** pass under Windows
+  PowerShell 5.1. Temporary fixtures, runners and neighboring test-created
+  installation copies are removed, including after the largest corpus suites.
+- **35 Python developer-tool tests** pass. They include PowerShell contracts in
+  both Windows shells with real junction refusal, held leases, interrupted-run
+  recovery, failure snapshots, edited-evidence retention and injected build
+  promotion rollback. Installer execution and network access are mocked.
+- Repeated app-only builds and both 19-check compiled-app probes pass; no
+  installer was built. The isolated setup library passes **25 checks** and all
+  **17 engine benchmark cases** pass their budgets. The strict source/data
+  audit, pinned dictionary-source check and **129 C# 5/token-format checks** pass.
+- Final cleanup refinements pass the developer-tool checks plus two explicitly
+  kept suites (**126 assertions**) and a normal PowerShell 7 smoke suite
+  (**82 assertions**). The two kept fixtures are separate, are verified before
+  explicit retirement, and leave their evidence behind.
+
+The full-suite evidence is pinned at
+`out/reports/tests/bf84288efbd946a8930b9ff3984df91c`; aggregate logs and preservation
+proof are under `out/cleanup-verification`. No live Word/Excel check, desktop
+input, installed-app restart, settings write, installer build or publication
+was performed. Installed engine/configuration hashes are checked separately;
+this tooling verification makes no new editor-performance claim.
+
 ## Release publication inputs — 7 November 2026
 
 The user authorized the release commit, `v1.9.10` tag, push and GitHub publication.
